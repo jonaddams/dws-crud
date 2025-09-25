@@ -1,0 +1,65 @@
+import { PrismaAdapter } from '@next-auth/prisma-adapter';
+import { PrismaClient } from '@prisma/client';
+import type { NextAuthOptions } from 'next-auth';
+import GoogleProvider from 'next-auth/providers/google';
+
+const prisma = new PrismaClient();
+
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+if (!googleClientId || !googleClientSecret) {
+  throw new Error(
+    'Missing required Google OAuth environment variables: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET'
+  );
+}
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    GoogleProvider({
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
+    }),
+  ],
+  callbacks: {
+    async signIn({ user }) {
+      // Only allow users with nutrient.io or pspdfkit.com email domains
+      if (!user.email) {
+        return false;
+      }
+
+      const allowedDomains = ['nutrient.io', 'pspdfkit.com'];
+      const emailDomain = user.email.split('@')[1];
+
+      return allowedDomains.includes(emailDomain);
+    },
+    async session({ session, user }) {
+      if (session.user) {
+        // Add user ID and role to session
+        const dbUser = await prisma.user.findUnique({
+          where: { email: user.email || '' },
+          select: {
+            id: true,
+            role: true,
+            currentImpersonationMode: true,
+          },
+        });
+
+        if (dbUser) {
+          session.user.id = dbUser.id;
+          session.user.role = dbUser.role;
+          session.user.currentImpersonationMode = dbUser.currentImpersonationMode;
+        }
+      }
+      return session;
+    },
+  },
+  pages: {
+    signIn: '/auth/signin',
+    error: '/auth/error',
+  },
+  session: {
+    strategy: 'database',
+  },
+};
