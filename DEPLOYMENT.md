@@ -135,14 +135,50 @@ After setting up your database:
 
 ### 1. Database Initialization
 
-After first deployment, initialize your database:
+**CRITICAL**: After first deployment, you must initialize your database. This creates all the required tables for NextAuth and the application.
 
+#### Method 1: Using Vercel CLI (Recommended)
 ```bash
-# Using Vercel CLI with environment variables
-vercel env pull .env.local
+# Install Vercel CLI if not already installed
+npm i -g vercel
+
+# Link your project to Vercel
+vercel link
+
+# Pull production environment variables
+vercel env pull .env.production
+
+# Run migrations against production database
+DATABASE_URL=$(grep DATABASE_URL .env.production | cut -d '=' -f2-) pnpm prisma migrate deploy
+
+# Verify schema is in sync
+DATABASE_URL=$(grep DATABASE_URL .env.production | cut -d '=' -f2-) pnpm prisma db push
+```
+
+#### Method 2: Direct Migration with Production DATABASE_URL
+```bash
+# Set your production DATABASE_URL (get this from Vercel environment variables)
+export DATABASE_URL="your_production_database_url_here"
+
+# Run migrations to create tables
 pnpm prisma migrate deploy
+
+# Verify schema is in sync
+pnpm prisma db push
+
+# Generate Prisma client (usually done automatically by postinstall)
 pnpm prisma generate
 ```
+
+#### What Gets Created:
+The migration creates these essential tables:
+- `accounts` - OAuth account information (NextAuth)
+- `sessions` - User session data (NextAuth)
+- `users` - User profiles (NextAuth)
+- `verification_tokens` - Email verification (NextAuth)
+- `documents` - Document metadata (Application)
+
+**⚠️ Common Error**: If you see `adapter_error_getUserByAccount` in Vercel logs, it means the migration hasn't been run yet.
 
 ### 2. Test the Application
 
@@ -173,11 +209,13 @@ If using a custom domain:
 - Verify `NEXTAUTH_URL` matches your deployed URL
 - Check Google OAuth redirect URIs
 - Ensure `NEXTAUTH_SECRET` is set
+- **Most Common**: `adapter_error_getUserByAccount` error means database tables don't exist - run migrations!
 
 **Database Connection Issues**:
-- Verify `DATABASE_URL` format: `postgresql://user:pass@host:port/db`
+- Verify `DATABASE_URL` format: `postgresql://user:pass@host:port/db?sslmode=require`
 - Check database is accessible from Vercel
-- Run migrations: `pnpm prisma migrate deploy`
+- **CRITICAL**: Run migrations after first deployment: `pnpm prisma migrate deploy`
+- For Neon databases, ensure `?sslmode=require` is in the connection string
 
 **Nutrient API Issues**:
 - Verify `NUTRIENT_API_KEY` is valid and has correct permissions
@@ -206,6 +244,7 @@ The app includes several optimizations:
 - **Static generation** for auth pages
 - **Dynamic imports** for large components
 - **Image optimization** through Next.js
+- **Automatic Prisma Client generation** via postinstall script for Vercel deployments
 
 ### Monitoring
 
