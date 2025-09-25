@@ -1,6 +1,6 @@
-# Deployment Guide - Nutrient Document Engine CRUD App
+# Deployment Guide - Nutrient Document Web Service (DWS) CRUD App
 
-This guide covers deploying the Nutrient Document Engine CRUD application to Vercel.
+This guide covers deploying the Nutrient DWS CRUD application to Vercel.
 
 ## Prerequisites
 

@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // Set output file tracing root to avoid lockfile warnings in Vercel
+  outputFileTracingRoot: __dirname,
+
   // Exclude @nutrient-sdk/viewer from the bundle since we're using the CDN version
   serverExternalPackages: ['@nutrient-sdk/viewer'],
 

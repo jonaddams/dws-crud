@@ -1217,12 +1217,12 @@ This configuration:
 - [Testing Library Principles](https://testing-library.com/docs/guiding-principles)
 - [Kent C. Dodds Testing JavaScript](https://testingjavascript.com/)
 - [Functional Programming in TypeScript](https://gcanti.github.io/fp-ts/)
-- [Nutrient Document Engine Documentation](./de-api-docs/)
+- [Nutrient Nutrient DWS Documentation](./de-api-docs/)
 
 ## Session Context for Resumption
 
 ### Current Project State (Session End)
-The Document Engine CRUD application is **85% complete** with comprehensive mobile responsiveness and theming:
+The Nutrient DWS CRUD application is **85% complete** with comprehensive mobile responsiveness and theming:
 
 #### ✅ **Fully Functional Features:**
 1. **Authentication**: Google OAuth with NextAuth.js, role-based access (ADMIN/USER)
@@ -1252,7 +1252,6 @@ The Document Engine CRUD application is **85% complete** with comprehensive mobi
 
 #### **Critical Code Locations:**
 - **Authentication**: `lib/auth.ts`, `lib/auth-config.ts`
-- **Document Engine**: `lib/document-engine.ts` 
 - **API Routes**: `app/api/documents/` (CRUD with search, filtering, and delete)
 - **UI Components**: `components/document-list.tsx`, `components/document-viewer.tsx`
 - **Theme System**: `components/providers/theme-provider.tsx`, `components/theme-toggle.tsx`
@@ -1260,7 +1259,7 @@ The Document Engine CRUD application is **85% complete** with comprehensive mobi
 
 #### **Known Working Features:**
 - Complete OAuth login/logout flow with role switching
-- File upload to Document Engine (up to 250MB) with progress tracking
+- File upload to Nutrient DWS (up to 250MB) with progress tracking
 - Responsive document list (mobile cards, desktop table) with delete functionality
 - Admin role switching (SELF ↔ USER modes) with permission-based UI
 - Full viewport document viewer with compact metadata and JWT auth
@@ -1271,7 +1270,7 @@ The Document Engine CRUD application is **85% complete** with comprehensive mobi
 
 #### **Architecture Notes:**
 - Server components for data fetching, client components for interactivity
-- JWT authentication for Document Engine viewer access
+- JWT authentication for Nutrient DWS viewer access
 - Role-based document filtering at database level
 - CDN-based Nutrient Viewer (version 1.4.1) with proper positioning
 - Mobile-first responsive design with Tailwind CSS v4
@@ -1312,7 +1311,6 @@ The Document Engine CRUD application is **85% complete** with comprehensive mobi
 
 ### Development Environment
 - **Database**: PostgreSQL running on localhost:5432
-- **Document Engine**: localhost:8585 with API key configured
 - **Next.js**: Development server on localhost:3000
 - **Commands**: `pnpm dev` (development), `npm run build` (production test)
 
