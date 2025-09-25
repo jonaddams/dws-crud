@@ -4,6 +4,9 @@ import { useRouter } from 'next/navigation';
 import { getSession, signIn } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 
+// Force dynamic rendering to prevent static generation issues
+export const dynamic = 'force-dynamic';
+
 export default function SignIn() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);

@@ -4,6 +4,14 @@ const nextConfig: NextConfig = {
   // Set output file tracing root to avoid lockfile warnings in Vercel
   outputFileTracingRoot: __dirname,
 
+  // Configure for Vercel deployment
+  env: {
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL || process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : undefined,
+  },
+
+
   // Exclude @nutrient-sdk/viewer from the bundle since we're using the CDN version
   serverExternalPackages: ['@nutrient-sdk/viewer'],
 

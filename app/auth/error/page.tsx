@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
+// Force dynamic rendering to prevent static generation issues
+export const dynamic = 'force-dynamic';
+
 function ErrorContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
