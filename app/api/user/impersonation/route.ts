@@ -1,8 +1,7 @@
-import { type ImpersonationMode, PrismaClient } from '@prisma/client';
+import type { ImpersonationMode } from '@prisma/client';
 import { type NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {

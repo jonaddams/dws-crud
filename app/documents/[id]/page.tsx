@@ -1,11 +1,9 @@
-import { PrismaClient } from '@prisma/client';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { DocumentViewer } from '@/components/document-viewer';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { getEffectiveDocumentFilter, requireAuth } from '@/lib/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 type Params = {
   id: string;

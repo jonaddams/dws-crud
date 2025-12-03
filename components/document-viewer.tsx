@@ -14,6 +14,8 @@ type ViewerError = {
 
 export function DocumentViewer({ documentId, className = '' }: DocumentViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewerInstanceRef = useRef<unknown>(null);
+  const isInitializingRef = useRef(false);
   const [error, setError] = useState<ViewerError | null>(null);
   const [viewerData, setViewerData] = useState<{
     sessionToken: string;
@@ -48,24 +50,31 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
 
   // Initialize the Nutrient Viewer using NutrientViewer.load()
   const initializeViewer = useCallback(async () => {
-    if (!viewerData || !containerRef.current) {
+    if (!viewerData || !containerRef.current || isInitializingRef.current) {
       return;
     }
+
+    isInitializingRef.current = true;
 
     try {
       setError(null);
 
       // Unload any existing NutrientViewer instance first
-      try {
-        if (window?.NutrientViewer?.unload) {
+      if (viewerInstanceRef.current && window?.NutrientViewer?.unload) {
+        try {
           await window.NutrientViewer.unload(containerRef.current);
+          viewerInstanceRef.current = null;
+        } catch (_error) {
+          // Ignore unload errors if no instance exists
         }
-      } catch (_error) {
-        // Ignore unload errors if no instance exists
       }
 
-      // Clear the container
-      containerRef.current.innerHTML = '';
+      // Clear the container completely - this is critical
+      if (containerRef.current) {
+        while (containerRef.current.firstChild) {
+          containerRef.current.removeChild(containerRef.current.firstChild);
+        }
+      }
 
       // Check if NutrientViewer is available
       if (typeof window === 'undefined' || !window.NutrientViewer) {
@@ -76,33 +85,43 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
         throw new Error('Empty session token received from API');
       }
 
-      await window.NutrientViewer.load({
+      const instance = await window.NutrientViewer.load({
         container: containerRef.current,
         session: viewerData.sessionToken,
+        useCDN: true, // Load assets from CDN to avoid future deprecation warnings
       });
+
+      viewerInstanceRef.current = instance;
     } catch (error) {
       setError({
         message: error instanceof Error ? error.message : 'Failed to load document viewer',
         code: 'VIEWER_ERROR',
       });
+      viewerInstanceRef.current = null;
+    } finally {
+      isInitializingRef.current = false;
     }
   }, [viewerData]);
 
   // Cleanup function
   const cleanup = useCallback(async () => {
-    if (containerRef.current) {
+    if (viewerInstanceRef.current && containerRef.current && window?.NutrientViewer?.unload) {
       try {
-        // Properly unload the NutrientViewer instance before clearing container
-        if (window?.NutrientViewer?.unload) {
-          await window.NutrientViewer.unload(containerRef.current);
-        }
+        await window.NutrientViewer.unload(containerRef.current);
+        viewerInstanceRef.current = null;
       } catch (_error) {
         // If unload fails, just clear the container
       }
-
-      // Clear the container as fallback
-      containerRef.current.innerHTML = '';
     }
+
+    // Clear the container completely
+    if (containerRef.current) {
+      while (containerRef.current.firstChild) {
+        containerRef.current.removeChild(containerRef.current.firstChild);
+      }
+    }
+
+    isInitializingRef.current = false;
   }, []);
 
   // Effect to fetch viewer data
@@ -154,11 +173,12 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
     };
   }, [cleanup]);
 
-  const handleRetry = useCallback(() => {
+  const handleRetry = useCallback(async () => {
     setError(null);
     setViewerData(null);
+    await cleanup();
     fetchViewerData();
-  }, [fetchViewerData]);
+  }, [fetchViewerData, cleanup]);
 
   if (error) {
     return (

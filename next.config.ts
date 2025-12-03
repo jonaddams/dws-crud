@@ -6,9 +6,8 @@ const nextConfig: NextConfig = {
 
   // Configure for Vercel deployment
   env: {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : undefined,
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
   },
 
 

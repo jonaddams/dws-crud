@@ -29,6 +29,8 @@ declare global {
       load(config: {
         container: HTMLElement;
         session: string;
+        useCDN?: boolean; // Load assets from CDN instead of local
+        baseUrl?: string; // Custom base URL for self-hosted assets
         [key: string]: unknown;
       }): Promise<unknown>;
       unload(container: HTMLElement): Promise<void>;

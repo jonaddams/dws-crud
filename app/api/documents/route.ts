@@ -1,9 +1,8 @@
-import { type Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getEffectiveDocumentFilter, requireAuth, type SessionUser } from '@/lib/auth';
 import { nutrientAPIService } from '@/lib/nutrient-api';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 /**
  * GET /api/documents

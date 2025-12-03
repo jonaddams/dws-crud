@@ -1,9 +1,7 @@
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
-import { PrismaClient } from '@prisma/client';
 import type { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-
-const prisma = new PrismaClient();
+import { prisma } from './prisma';
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -22,6 +20,7 @@ export const authOptions: NextAuthOptions = {
       clientSecret: googleClientSecret,
     }),
   ],
+  secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
     async signIn({ user }) {
       // Only allow users with nutrient.io or pspdfkit.com email domains
