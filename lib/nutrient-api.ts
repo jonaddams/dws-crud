@@ -246,4 +246,26 @@ class NutrientAPIService {
   }
 }
 
-export const nutrientAPIService = new NutrientAPIService();
+// Lazy initialization to avoid instantiation during build
+let _nutrientAPIService: NutrientAPIService | null = null;
+
+function getNutrientAPIService(): NutrientAPIService {
+  if (!_nutrientAPIService) {
+    _nutrientAPIService = new NutrientAPIService();
+  }
+  return _nutrientAPIService;
+}
+
+// Export a Proxy that creates the service only when accessed
+export const nutrientAPIService = new Proxy({} as NutrientAPIService, {
+  get(_target, prop) {
+    const service = getNutrientAPIService();
+    const value = service[prop as keyof NutrientAPIService];
+
+    if (typeof value === 'function') {
+      return value.bind(service);
+    }
+
+    return value;
+  },
+});
