@@ -38,20 +38,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    // Use existing session token or create a new one if needed
-    let sessionToken = document.sessionToken;
+    // Always create a fresh session token (they expire after 24 hours)
+    // This ensures we never use an expired token
+    const sessionData = await nutrientAPIService.createSession(document.documentEngineId);
+    const sessionToken = sessionData.sessionToken;
 
-    if (!sessionToken) {
-      // If no session token exists, create a new one
-      const sessionData = await nutrientAPIService.createSession(document.documentEngineId);
-      sessionToken = sessionData.sessionToken;
-
-      // Update database with the new session token
-      await prisma.document.update({
-        where: { id },
-        data: { sessionToken },
-      });
-    }
+    // Update database with the new session token for reference
+    await prisma.document.update({
+      where: { id },
+      data: { sessionToken },
+    });
 
     return NextResponse.json({
       sessionToken,

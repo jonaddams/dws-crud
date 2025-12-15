@@ -125,11 +125,18 @@ class NutrientAPIService {
       const result = await response.json();
 
       // The response might have the session token in different places
+      // Check both camelCase and snake_case formats
       const sessionToken =
-        result.sessionToken || result.data?.sessionToken || result.token || result.jwt;
+        result.data?.session_token ||
+        result.sessionToken ||
+        result.data?.sessionToken ||
+        result.token ||
+        result.jwt;
 
       if (!sessionToken) {
-        throw new Error('Session token not found in API response');
+        throw new Error(
+          `Session token not found in API response. Response structure: ${JSON.stringify(result)}`
+        );
       }
 
       return {
