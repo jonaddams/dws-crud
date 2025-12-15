@@ -9,17 +9,16 @@ type GlobalPrisma = {
 
 const globalForPrisma = globalThis as unknown as GlobalPrisma;
 
-// Initialize Prisma Client with conditional adapter
+// Initialize Prisma Client with PostgreSQL adapter
 function createPrismaClient(): PrismaClient {
   const databaseUrl = process.env.DATABASE_URL;
 
-  // For build time without DATABASE_URL, create a basic client that won't be used
+  // If no DATABASE_URL, create client without adapter (build time)
   if (!databaseUrl) {
-    // This client won't actually connect during build
     return new PrismaClient();
   }
 
-  // For runtime, use the PostgreSQL adapter
+  // For runtime with DATABASE_URL, use PostgreSQL adapter
   if (!globalForPrisma.pool) {
     globalForPrisma.pool = new Pool({
       connectionString: databaseUrl,
