@@ -11,7 +11,8 @@ const globalForPrisma = globalThis as unknown as GlobalPrisma;
 
 // Initialize Prisma Client with PostgreSQL adapter
 function createPrismaClient(): PrismaClient {
-  const databaseUrl = process.env.DATABASE_URL;
+  // Try Vercel Neon variable first, fallback to DATABASE_URL
+  const databaseUrl = process.env.DATABASE_POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
 
   // If no DATABASE_URL, create client without adapter (build time)
   if (!databaseUrl) {
