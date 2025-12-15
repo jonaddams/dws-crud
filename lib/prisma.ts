@@ -7,20 +7,42 @@ const globalForPrisma = globalThis as unknown as {
   pool: Pool | undefined;
 };
 
-if (!globalForPrisma.pool) {
-  globalForPrisma.pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-  });
+// Lazy pool initialization - only create when DATABASE_URL is available
+function getPool(): Pool {
+  if (!globalForPrisma.pool) {
+    const databaseUrl = process.env.DATABASE_URL;
+
+    // Allow build to proceed without DATABASE_URL (runtime-only requirement)
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+
+    globalForPrisma.pool = new Pool({
+      connectionString: databaseUrl,
+    });
+  }
+  return globalForPrisma.pool;
 }
 
-const adapter = new PrismaPg(globalForPrisma.pool);
-
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    adapter,
-  });
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+// Create adapter lazily to avoid build-time errors
+function getAdapter(): PrismaPg {
+  return new PrismaPg(getPool());
 }
+
+// Lazy Prisma client initialization
+function getPrismaClient(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = new PrismaClient({
+      adapter: getAdapter(),
+    });
+  }
+  return globalForPrisma.prisma;
+}
+
+// Export a proxy that delays initialization until first use
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getPrismaClient();
+    return client[prop as keyof PrismaClient];
+  },
+});
