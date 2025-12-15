@@ -2,47 +2,37 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 
-const globalForPrisma = globalThis as unknown as {
+type GlobalPrisma = {
   prisma: PrismaClient | undefined;
   pool: Pool | undefined;
 };
 
-// Lazy pool initialization - only create when DATABASE_URL is available
-function getPool(): Pool {
+const globalForPrisma = globalThis as unknown as GlobalPrisma;
+
+// Initialize Prisma Client with conditional adapter
+function createPrismaClient(): PrismaClient {
+  const databaseUrl = process.env.DATABASE_URL;
+
+  // For build time without DATABASE_URL, create a basic client that won't be used
+  if (!databaseUrl) {
+    // This client won't actually connect during build
+    return new PrismaClient();
+  }
+
+  // For runtime, use the PostgreSQL adapter
   if (!globalForPrisma.pool) {
-    const databaseUrl = process.env.DATABASE_URL;
-
-    // Allow build to proceed without DATABASE_URL (runtime-only requirement)
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL environment variable is not set');
-    }
-
     globalForPrisma.pool = new Pool({
       connectionString: databaseUrl,
     });
   }
-  return globalForPrisma.pool;
+
+  const adapter = new PrismaPg(globalForPrisma.pool);
+  return new PrismaClient({ adapter });
 }
 
-// Create adapter lazily to avoid build-time errors
-function getAdapter(): PrismaPg {
-  return new PrismaPg(getPool());
-}
+// Export Prisma client with singleton pattern
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-// Lazy Prisma client initialization
-function getPrismaClient(): PrismaClient {
-  if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = new PrismaClient({
-      adapter: getAdapter(),
-    });
-  }
-  return globalForPrisma.prisma;
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
 }
-
-// Export a proxy that delays initialization until first use
-export const prisma = new Proxy({} as PrismaClient, {
-  get(_target, prop) {
-    const client = getPrismaClient();
-    return client[prop as keyof PrismaClient];
-  },
-});
