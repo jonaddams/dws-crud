@@ -79,12 +79,15 @@ export function FileUpload() {
     setDragOver(false);
   }, []);
 
-  const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      document.getElementById('file-upload')?.click();
-    }
-  }, []);
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        document.getElementById(fileUploadId)?.click();
+      }
+    },
+    [fileUploadId]
+  );
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -221,7 +224,7 @@ export function FileUpload() {
                 />
               </svg>
               <div className="text-sm text-muted">
-                <label htmlFor="file-upload" className="cursor-pointer">
+                <label htmlFor={fileUploadId} className="cursor-pointer">
                   <span className="font-medium text-primary hover:text-primary-hover transition-colors">
                     Click to upload
                   </span>
@@ -235,7 +238,6 @@ export function FileUpload() {
                   />
                 </label>
               </div>
-              <p className="text-xs text-muted">Up to 250MB</p>
             </div>
           )}
         </div>

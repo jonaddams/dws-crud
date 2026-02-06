@@ -124,12 +124,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
     }
 
-    // Validate file size (250MB limit)
-    const MAX_FILE_SIZE = 250 * 1024 * 1024; // 250MB
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'File size must be less than 250MB' }, { status: 400 });
-    }
-
     // Upload to Nutrient API with retry logic
     const nutrientResult = await nutrientAPIService.withRetry(() =>
       nutrientAPIService.uploadDocument(file)
