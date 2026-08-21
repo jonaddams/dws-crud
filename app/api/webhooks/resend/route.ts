@@ -3,6 +3,7 @@ import { addComment } from '@/lib/dws-comments';
 import { extractReplyBody } from '@/lib/email-reply';
 import { prisma } from '@/lib/prisma';
 import { extractReplyToken } from '@/lib/reply-token';
+import { fetchInboundEmail } from '@/lib/resend';
 import { verifyWebhookSignature } from '@/lib/webhook-signature';
 
 /**
@@ -25,6 +26,10 @@ import { verifyWebhookSignature } from '@/lib/webhook-signature';
  * gain from redelivering a message we have deliberately ignored.
  */
 
+/**
+ * What `email.received` actually carries: metadata only. There is no body, and
+ * no headers — reading the reply takes a second call keyed by `email_id`.
+ */
 type InboundEmailPayload = {
   type?: string;
   data?: {
@@ -32,8 +37,9 @@ type InboundEmailPayload = {
     from?: string;
     to?: string[];
     cc?: string[];
+    /** The addresses the message was actually routed to, plus-addressing intact. */
+    received_for?: string[];
     subject?: string;
-    text?: string;
   };
 };
 
@@ -75,7 +81,11 @@ export async function POST(request: NextRequest) {
   }
 
   const token = extractReplyToken({
-    recipients: [...(payload.data?.to ?? []), ...(payload.data?.cc ?? [])],
+    recipients: [
+      ...(payload.data?.received_for ?? []),
+      ...(payload.data?.to ?? []),
+      ...(payload.data?.cc ?? []),
+    ],
     domain: replyDomain(),
   });
 
@@ -103,7 +113,11 @@ export async function POST(request: NextRequest) {
     return ignored('unknown reply token');
   }
 
-  const body = extractReplyBody(payload.data?.text ?? '');
+  // The event carries no body, so fetch it. Skipping this step is invisible in
+  // testing: the handler simply finds nothing to post and answers 200.
+  const inbound = await fetchInboundEmail({ emailId: providerMessageId });
+
+  const body = extractReplyBody(inbound.text);
   if (!body) {
     return ignored('reply had no new text');
   }

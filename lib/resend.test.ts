@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { sendEmail } from '@/lib/resend';
+import { fetchInboundEmail, sendEmail } from '@/lib/resend';
 
 const accepted = () =>
   new Response(JSON.stringify({ id: 'msg_123' }), {
@@ -20,7 +20,7 @@ const sent = (fetchMock: ReturnType<typeof vi.fn>) => {
   return {
     url: String(url),
     headers: init?.headers as Record<string, string>,
-    body: JSON.parse(String(init?.body)),
+    body: init?.body ? JSON.parse(String(init.body)) : undefined,
   };
 };
 
@@ -104,5 +104,46 @@ describe('Sending through Resend', () => {
     vi.stubEnv('EMAIL_FROM', '');
 
     await expect(sendEmail(MESSAGE)).rejects.toThrow(/EMAIL_FROM/);
+  });
+});
+
+describe('Retrieving an inbound message', () => {
+  const inboundResponse = (body: Record<string, unknown>) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  it('asks Resend for the received email by id', async () => {
+    const fetchMock = mockFetch(inboundResponse({ id: 'in_1', text: 'hello' }));
+
+    await fetchInboundEmail({ emailId: 'in_1' });
+
+    expect(sent(fetchMock).url).toBe('https://api.resend.com/emails/inbound/in_1');
+  });
+
+  it('returns the body, which the webhook event itself does not carry', async () => {
+    // An email.received event delivers metadata only: no text, html or headers.
+    mockFetch(inboundResponse({ id: 'in_1', text: 'the reply', html: '<p>the reply</p>' }));
+
+    await expect(fetchInboundEmail({ emailId: 'in_1' })).resolves.toEqual({
+      text: 'the reply',
+      html: '<p>the reply</p>',
+    });
+  });
+
+  it('copes with a message that has no plain text part', async () => {
+    mockFetch(inboundResponse({ id: 'in_1', html: '<p>only html</p>' }));
+
+    await expect(fetchInboundEmail({ emailId: 'in_1' })).resolves.toEqual({
+      text: '',
+      html: '<p>only html</p>',
+    });
+  });
+
+  it('reports a failed retrieval rather than pretending the reply was empty', async () => {
+    mockFetch(new Response('{"message":"not found"}', { status: 404 }));
+
+    await expect(fetchInboundEmail({ emailId: 'in_1' })).rejects.toThrow(/404/);
   });
 });
