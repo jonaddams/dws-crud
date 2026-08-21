@@ -1,4 +1,4 @@
-import { UserRole, ImpersonationMode } from '@prisma/client';
+import { ImpersonationMode, UserRole } from '@prisma/client';
 
 declare module 'next-auth' {
   interface User {

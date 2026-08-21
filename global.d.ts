@@ -1,6 +1,6 @@
 // Global TypeScript declarations for the Nutrient API CRUD App
 
-import type { UserRole, ImpersonationMode } from '@prisma/client';
+import type { ImpersonationMode, UserRole } from '@prisma/client';
 
 // Extend NextAuth types
 declare module 'next-auth' {
@@ -37,5 +37,3 @@ declare global {
     };
   }
 }
-
-export {};
