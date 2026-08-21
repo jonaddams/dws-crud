@@ -40,7 +40,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     // Always create a fresh session token (they expire after 24 hours)
     // This ensures we never use an expired token
-    const sessionData = await nutrientAPIService.createSession(document.documentEngineId);
+    const sessionData = await nutrientAPIService.createSession({
+      documentId: document.documentEngineId,
+      userId: session.user.id,
+    });
     const sessionToken = sessionData.sessionToken;
 
     // Update database with the new session token for reference

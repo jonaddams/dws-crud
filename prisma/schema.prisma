@@ -58,6 +58,9 @@ model User {
   sessions  Session[]
   documents Document[]
 
+  mentions    CommentMention[]
+  replyTokens ThreadReplyToken[]
+
   @@map("users")
 }
 
@@ -86,7 +89,97 @@ model Document {
 
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
+  commentThreads CommentThread[]
+
   @@map("documents")
+}
+
+// Comment mention models
+//
+// DWS is the system of record for comment content. These tables are a local
+// projection: enough to answer "who was mentioned where", "have we already
+// notified them", and "which thread does this inbound email belong to" without
+// re-reading every document from DWS.
+
+/// One comment thread, anchored to the DWS markup annotation carrying
+/// `isCommentThreadRoot: true`. The root annotation's ID is the thread's identity.
+model CommentThread {
+  id               String   @id @default(cuid())
+  documentId       String   @map("document_id")
+  rootAnnotationId String   @unique @map("root_annotation_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  document    Document           @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  comments    ObservedComment[]
+  replyTokens ThreadReplyToken[]
+
+  @@index([documentId])
+  @@map("comment_threads")
+}
+
+/// A DWS comment the reconciler has already processed. Recorded even when it
+/// mentions nobody, so a later reconcile does not treat it as new.
+model ObservedComment {
+  id           String   @id @default(cuid())
+  threadId     String   @map("thread_id")
+  dwsCommentId String   @unique @map("dws_comment_id")
+  authorUserId String?  @map("author_user_id")
+  observedAt   DateTime @default(now()) @map("observed_at")
+
+  thread   CommentThread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  mentions CommentMention[]
+
+  @@index([threadId])
+  @@map("observed_comments")
+}
+
+/// One person mentioned in one comment. The unique constraint is what makes
+/// notification idempotent: a repeated reconcile cannot send a second email.
+model CommentMention {
+  id              String    @id @default(cuid())
+  commentId       String    @map("comment_id")
+  mentionedUserId String    @map("mentioned_user_id")
+  notifiedAt      DateTime? @map("notified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  comment       ObservedComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  mentionedUser User            @relation(fields: [mentionedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, mentionedUserId])
+  @@index([mentionedUserId])
+  @@map("comment_mentions")
+}
+
+/// The credential behind an inbound email reply. One stable token per
+/// (thread, user) so a person replying to any notification on a thread lands in
+/// the right place. The token is opaque; see lib/reply-token.ts for why the
+/// identifiers cannot live in the address itself.
+model ThreadReplyToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  threadId  String   @map("thread_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  thread CommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@map("thread_reply_tokens")
+}
+
+/// One inbound email we have accepted. Resend retries a webhook it believes
+/// failed, so the provider's message ID is recorded and made unique: a redelivery
+/// finds the row and stops rather than posting the reply into the thread twice.
+model InboundEmail {
+  id                String   @id @default(cuid())
+  providerMessageId String   @unique @map("provider_message_id")
+  threadId          String?  @map("thread_id")
+  userId            String?  @map("user_id")
+  dwsCommentId      String?  @map("dws_comment_id")
+  receivedAt        DateTime @default(now()) @map("received_at")
+
+  @@map("inbound_emails")
 }
 
 enum UserRole {
