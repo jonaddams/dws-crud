@@ -11,7 +11,16 @@ for (const file of ['.env', '.env.local']) {
   }
 }
 
-const databaseUrl = process.env.DATABASE_URL;
+/**
+ * Migrations need a *direct* connection. Neon's pooled endpoint (PgBouncer) does
+ * not support the session-level statements the migration engine issues, so the
+ * unpooled URL is preferred when present. Locally only DATABASE_URL is set and it
+ * is already direct.
+ */
+const databaseUrl =
+  process.env.DATABASE_POSTGRES_URL_NON_POOLING ??
+  process.env.DATABASE_DATABASE_URL_UNPOOLED ??
+  process.env.DATABASE_URL;
 
 /**
  * Prisma 7 moved the datasource URL out of schema.prisma and into this file.
