@@ -168,6 +168,20 @@ model ThreadReplyToken {
   @@map("thread_reply_tokens")
 }
 
+/// One inbound email we have accepted. Resend retries a webhook it believes
+/// failed, so the provider's message ID is recorded and made unique: a redelivery
+/// finds the row and stops rather than posting the reply into the thread twice.
+model InboundEmail {
+  id                String   @id @default(cuid())
+  providerMessageId String   @unique @map("provider_message_id")
+  threadId          String?  @map("thread_id")
+  userId            String?  @map("user_id")
+  dwsCommentId      String?  @map("dws_comment_id")
+  receivedAt        DateTime @default(now()) @map("received_at")
+
+  @@map("inbound_emails")
+}
+
 enum UserRole {
   ADMIN
   USER
