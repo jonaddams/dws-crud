@@ -10,6 +10,7 @@
  */
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+const RESEND_INBOUND_ENDPOINT = 'https://api.resend.com/emails/inbound';
 
 export type SendEmailOptions = {
   to: string;
@@ -62,4 +63,42 @@ export const sendEmail = async (options: SendEmailOptions): Promise<{ id: string
   const result = JSON.parse(raw) as { id?: string };
 
   return { id: result.id ?? '' };
+};
+
+export type InboundEmailBody = {
+  text: string;
+  html: string;
+};
+
+/**
+ * Fetches the body of a received email.
+ *
+ * The `email.received` webhook carries metadata only — sender, recipients,
+ * subject, attachment descriptors — and no body, headers or content of any kind.
+ * Reading the reply therefore takes a second call, keyed by the `email_id` from
+ * the event.
+ *
+ * This is easy to miss: without it the handler sees an empty reply and silently
+ * decides there was nothing to post, which looks exactly like a working webhook.
+ */
+export const fetchInboundEmail = async (options: {
+  emailId: string;
+}): Promise<InboundEmailBody> => {
+  const response = await fetch(`${RESEND_INBOUND_ENDPOINT}/${options.emailId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${requireEnv('RESEND_KEY')}`,
+      Accept: 'application/json',
+    },
+  });
+
+  const raw = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Resend could not return inbound email: ${response.status} - ${raw}`);
+  }
+
+  const result = JSON.parse(raw) as { text?: string; html?: string };
+
+  return { text: result.text ?? '', html: result.html ?? '' };
 };

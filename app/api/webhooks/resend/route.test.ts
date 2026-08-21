@@ -8,8 +8,12 @@ const addComment = vi.fn();
 const findUniqueToken = vi.fn();
 const createInbound = vi.fn();
 const updateInbound = vi.fn();
+const fetchInboundEmail = vi.fn();
 
 vi.mock('@/lib/dws-comments', () => ({ addComment: (...args: unknown[]) => addComment(...args) }));
+vi.mock('@/lib/resend', () => ({
+  fetchInboundEmail: (...args: unknown[]) => fetchInboundEmail(...args),
+}));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     threadReplyToken: { findUnique: (...a: unknown[]) => findUniqueToken(...a) },
@@ -38,6 +42,7 @@ const KNOWN_TOKEN = {
   },
 };
 
+// Mirrors a real email.received event: metadata only, no body of any kind.
 const inboundPayload = (overrides: Record<string, unknown> = {}) =>
   JSON.stringify({
     type: 'email.received',
@@ -45,8 +50,11 @@ const inboundPayload = (overrides: Record<string, unknown> = {}) =>
       email_id: 'inbound_1',
       from: 'bob@nutrient.io',
       to: [`reply+${TOKEN}@jonaddams.com`],
+      received_for: [`reply+${TOKEN}@jonaddams.com`],
       subject: 'Re: Alice mentioned you',
-      text: 'Agreed, softening it now.',
+      attachments: [],
+      cc: [],
+      bcc: [],
       ...overrides,
     },
   });
@@ -82,6 +90,7 @@ beforeEach(() => {
   findUniqueToken.mockReset().mockResolvedValue(KNOWN_TOKEN);
   createInbound.mockReset().mockResolvedValue({});
   updateInbound.mockReset().mockResolvedValue({});
+  fetchInboundEmail.mockReset().mockResolvedValue({ text: 'Agreed, softening it now.', html: '' });
 });
 
 describe('Refusing untrusted requests', () => {
@@ -145,14 +154,33 @@ describe('Attributing the reply', () => {
     );
   });
 
+  it('fetches the body, since the event does not carry one', async () => {
+    await postWebhook(inboundPayload());
+
+    expect(fetchInboundEmail).toHaveBeenCalledWith({ emailId: 'inbound_1' });
+  });
+
   it('posts only what the sender wrote, not the quoted thread', async () => {
+    fetchInboundEmail.mockResolvedValue({
+      text: 'Agreed.\n\nOn Thu, Alice wrote:\n> Can we tighten this clause?',
+      html: '',
+    });
+
+    await postWebhook(inboundPayload());
+
+    expect(addComment).toHaveBeenCalledWith(expect.objectContaining({ text: 'Agreed.' }));
+  });
+
+  it('recovers the token from received_for when to has been rewritten', async () => {
+    // Some forwarders replace `to`; received_for keeps the address we issued.
     await postWebhook(
       inboundPayload({
-        text: 'Agreed.\n\nOn Thu, Alice wrote:\n> Can we tighten this clause?',
+        to: ['someone-else@example.com'],
+        received_for: [`reply+${TOKEN}@jonaddams.com`],
       })
     );
 
-    expect(addComment).toHaveBeenCalledWith(expect.objectContaining({ text: 'Agreed.' }));
+    expect(addComment).toHaveBeenCalled();
   });
 });
 
@@ -165,7 +193,9 @@ describe('Turning away what it cannot use', () => {
   });
 
   it('ignores a message addressed to nothing resembling a reply token', async () => {
-    const response = await postWebhook(inboundPayload({ to: ['support@jonaddams.com'] }));
+    const response = await postWebhook(
+      inboundPayload({ to: ['support@jonaddams.com'], received_for: ['support@jonaddams.com'] })
+    );
 
     expect(response.status).toBe(200);
     expect(addComment).not.toHaveBeenCalled();
@@ -183,9 +213,12 @@ describe('Turning away what it cannot use', () => {
   });
 
   it('ignores a reply whose only content was the quoted original', async () => {
-    const response = await postWebhook(
-      inboundPayload({ text: 'On Thu, Alice wrote:\n> Can we tighten this?' })
-    );
+    fetchInboundEmail.mockResolvedValue({
+      text: 'On Thu, Alice wrote:\n> Can we tighten this?',
+      html: '',
+    });
+
+    const response = await postWebhook(inboundPayload());
 
     expect(response.status).toBe(200);
     expect(addComment).not.toHaveBeenCalled();
