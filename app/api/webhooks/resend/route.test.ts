@@ -2,6 +2,7 @@
 
 import { createHmac, randomBytes } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createReplyToken } from '@/lib/reply-token';
 
 const addComment = vi.fn();
 const findUniqueToken = vi.fn();
@@ -23,7 +24,9 @@ const { POST } = await import('@/app/api/webhooks/resend/route');
 
 const SECRET_BYTES = randomBytes(24);
 const SECRET = `whsec_${SECRET_BYTES.toString('base64')}`;
-const TOKEN = 'mzxw6ytboi7wzeq3mzxw6ytboi7wzeq3';
+// Generated rather than written out: a literal here is indistinguishable from a
+// real reply token, both to a reader and to a secret scanner.
+const TOKEN = createReplyToken();
 
 const KNOWN_TOKEN = {
   userId: 'user_bob',
