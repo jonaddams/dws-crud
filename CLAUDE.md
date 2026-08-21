@@ -99,11 +99,17 @@ than enabling `globals: true` — this keeps the type augmentation working witho
 
 **CRITICAL**: All code must pass Biome linting before committing. This is non-negotiable for company repository standards.
 
-- **Version**: Use latest version of Biome (currently 2.1.4+)
+- **Version**: Use latest version of Biome (currently 2.5.9)
 - **Installation**: Biome is available globally via Brew, but project should have local dependency
 - **Usage**: Run `biome check` and `biome check --write` to auto-fix issues
-- **Configuration**: Project uses default Biome configuration with TypeScript support
+- **Configuration**: `biome.json`, keyed to the installed version's `$schema`. After a Biome
+  upgrade run `biome migrate --write` — 2.5 renamed `linter.rules.recommended` to
+  `linter.rules.preset`, and future majors will drop the old spelling
 - **Integration**: Must be run after every code change before commit
+
+Biome is the **only** linter. ESLint and `eslint-config-next` were removed in August 2026:
+Next.js 16 dropped the `next lint` command that the old `lint` script called, and keeping a
+second linter alongside Biome bought nothing. `pnpm lint` now runs `biome check`.
 
 **Required Commands:**
 ```bash
@@ -1196,11 +1202,14 @@ const processOrder = (order: Order) => {
 The Nutrient Viewer CDN version is managed through environment variables for easy updates:
 
 ```bash
-# .env and .env.local
-NUTRIENT_VIEWER_VERSION=1.4.1
+# .env.production (tracked default) and .env.local
+NUTRIENT_VIEWER_VERSION=1.20.0
 ```
 
-This allows updating the Nutrient Viewer library version by simply changing the environment variable rather than searching through code. The version is used in `app/layout.tsx`:
+The version is not a secret, so `.env.production` carries the real value rather than a
+placeholder — that is the default a build uses. Three places can hold it and all three
+should agree: `.env.production`, your local `.env.local`, and any Vercel environment
+override. The version is used in `app/layout.tsx`:
 
 ```typescript
 <Script
@@ -1211,12 +1220,19 @@ This allows updating the Nutrient Viewer library version by simply changing the 
 
 **Important**: When updating the Nutrient Viewer version, also check:
 1. TypeScript definitions in `global.d.ts` for API compatibility
-2. Documentation in `de-api-docs/` for any breaking changes
-3. Run full test suite to ensure compatibility
+2. The changelog at https://www.nutrient.io/guides/web/changelog/ for breaking changes
+3. That the CDN URL actually resolves for the new version, e.g.
+   `curl -I https://cdn.cloud.pspdfkit.com/pspdfkit-web@<version>/nutrient-viewer.js`
+4. Run full test suite to ensure compatibility
+
+The app's viewer surface is deliberately tiny — `NutrientViewer.load({ container, session,
+useCDN })` and `NutrientViewer.unload(container)` — so most Web SDK breaking changes (UI
+slots, form field options, i18n keys) do not touch it. Note `useCDN` requires **1.9.1 or
+later**; on older versions it is silently ignored.
 
 ### Next.js and Webpack Configuration
 
-The project uses Next.js 15 with Turbopack for development. To exclude the `@nutrient-sdk/viewer` package from bundling (since we use the CDN version), we configure both server and client-side externals in `next.config.ts`:
+The project uses Next.js 16 with Turbopack. To exclude the `@nutrient-sdk/viewer` package from bundling (since we use the CDN version), we configure both server and client-side externals in `next.config.ts`:
 
 ```typescript
 const nextConfig: NextConfig = {
@@ -1250,6 +1266,12 @@ This configuration:
 - Uses Webpack externals only for production builds (`!dev`)
 - Eliminates the "Webpack configured while Turbopack is not" warning
 
+**Stale as of Next.js 16**: `next build` now uses Turbopack too, so the `webpack()` function
+in `next.config.ts` never runs. `@nutrient-sdk/viewer` is also not an installed dependency —
+the viewer comes entirely from the CDN script tag — so all three externals settings are
+currently inert. They are harmless, but do not treat them as load-bearing, and consider
+deleting the `webpack()` block next time this file is touched.
+
 ## Resources and References
 
 - [TypeScript Handbook](https://www.typescriptlang.org/docs/handbook/intro.html)
@@ -1273,7 +1295,7 @@ The Nutrient DWS CRUD application is **85% complete** with comprehensive mobile 
 7. **Theme System**: Complete dark/light mode with CSS custom properties and localStorage persistence
 8. **Search API**: Server-side search with filtering by title, filename, author and sorting capabilities
 9. **UI/UX Enhancements**: Consistent headers, improved text contrast, compact metadata tables
-10. **Technical Stack**: Next.js 15, TypeScript, Prisma, PostgreSQL, Tailwind CSS v4
+10. **Technical Stack**: Next.js 16, React 19, TypeScript, Prisma 7, PostgreSQL, Tailwind CSS v4
 
 #### 🔄 **Remaining Tasks (2 items):**
 1. **Client-Side Search UI**: Search bar, filter dropdowns, sort controls (High Priority)
@@ -1311,7 +1333,7 @@ The Nutrient DWS CRUD application is **85% complete** with comprehensive mobile 
 - Server components for data fetching, client components for interactivity
 - JWT authentication for Nutrient DWS viewer access
 - Role-based document filtering at database level
-- CDN-based Nutrient Viewer (version 1.4.1) with proper positioning
+- CDN-based Nutrient Viewer (version 1.20.0) with proper positioning
 - Mobile-first responsive design with Tailwind CSS v4
 - Theme system using CSS custom properties for consistency
 

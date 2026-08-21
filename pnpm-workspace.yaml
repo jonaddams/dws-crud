@@ -1,3 +1,10 @@
+# Prisma's build scripts are not needed: `prisma generate` runs from the
+# postinstall script and produces a working client without them. Setting these
+# explicitly stops pnpm from re-injecting an unanswered allowBuilds template on
+# every install.
+allowBuilds:
+  '@prisma/engines': false
+  prisma: false
 ignoredBuiltDependencies:
   - '@prisma/client'
   - '@prisma/engines'
