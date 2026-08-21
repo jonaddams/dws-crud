@@ -13,6 +13,12 @@ export interface ViewerSessionData {
   documentId: string;
 }
 
+export type CreateSessionOptions = {
+  documentId: string;
+  /** The app's own user ID. Becomes `createdBy` on anything authored in the viewer. */
+  userId?: string;
+};
+
 class NutrientAPIService {
   private apiKey: string;
   private baseUrl: string;
@@ -73,7 +79,7 @@ class NutrientAPIService {
 
       // Fall back to creating a session if not provided
       try {
-        const sessionData = await this.createSession(documentId);
+        const sessionData = await this.createSession({ documentId });
         return {
           sessionToken: sessionData.sessionToken,
           documentId,
@@ -91,9 +97,16 @@ class NutrientAPIService {
   }
 
   /**
-   * Create a session token for viewing an existing document
+   * Create a session token for viewing an existing document.
+   *
+   * `userId` should be the app's own user ID. DWS records it as `createdBy` on
+   * anything the reader authors in the viewer, which is what ties a comment back
+   * to an account. Omitted when no user is known, e.g. the session minted during
+   * upload.
    */
-  async createSession(documentId: string): Promise<ViewerSessionData> {
+  async createSession(options: CreateSessionOptions): Promise<ViewerSessionData> {
+    const { documentId, userId } = options;
+
     try {
       // Set expiration to 24 hours from now
       const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
@@ -102,16 +115,23 @@ class NutrientAPIService {
         allowed_documents: [
           {
             document_id: documentId,
-            document_permissions: ['read'],
+            // `permissions`, not `document_permissions`: DWS accepts the latter
+            // without complaint and then ignores it, so the wrong key leaves the
+            // session on defaults instead of failing loudly. Write access is what
+            // lets the reader add comments.
+            permissions: ['read', 'write'],
           },
         ],
         exp: exp,
+        ...(userId ? { user_id: userId } : {}),
       };
 
       const response = await fetch('https://api.nutrient.io/viewer/sessions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
+          // DWS answers a wildcard Accept header with HTTP 406.
+          Accept: 'application/json',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(sessionPayload),
