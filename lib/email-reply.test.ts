@@ -81,3 +81,72 @@ describe('Reading what someone actually wrote back', () => {
     expect(extractReplyBody('')).toBe('');
   });
 });
+
+describe('Signatures that do not use the conventional delimiter', () => {
+  it('cuts at a decorative separator line', () => {
+    // Captured from a real Gmail reply: the separator is Morse code, and there
+    // is no "-- " anywhere in the message.
+    const raw = [
+      'No, do not use expensive extra virgin olive oil, save it for a nice salad.',
+      '',
+      '− •   • • −    −    • − •    • •    •    − •    −',
+      'Jon Addams',
+      'Solutions Engineer',
+      '',
+      'jon.addams@nutrient.io',
+      '',
+      'Click here to set up a call <https://scheduler.zoom.us/nutrient-jon-addams>',
+      '',
+      '[image: Nutrient]',
+      '',
+      'The deterministic document platform. nutrient.io',
+      '',
+      '',
+      'On Fri, Aug 21, 2026 at 4:27 PM <jon@jonaddams.com> wrote:',
+      '> Hi Jon Addams,',
+    ].join('\n');
+
+    expect(extractReplyBody(raw)).toBe(
+      'No, do not use expensive extra virgin olive oil, save it for a nice salad.'
+    );
+  });
+
+  it('cuts at a rule of underscores', () => {
+    const raw = ['Approved.', '', '________________________________', 'Jane Doe', 'Legal'].join(
+      '\n'
+    );
+
+    expect(extractReplyBody(raw)).toBe('Approved.');
+  });
+
+  it('cuts at a rule of equals signs', () => {
+    const raw = ['Looks fine.', '====================', 'Sent from somewhere'].join('\n');
+
+    expect(extractReplyBody(raw)).toBe('Looks fine.');
+  });
+
+  it('drops the placeholder a mail client leaves where an image was', () => {
+    expect(extractReplyBody('Yes please.\n[image: Nutrient]')).toBe('Yes please.');
+  });
+
+  it('cuts a mobile sign-off', () => {
+    expect(extractReplyBody('On my way.\n\nSent from my iPhone')).toBe('On my way.');
+  });
+
+  it('keeps punctuation that is part of a sentence', () => {
+    // A short run of symbols inside prose is not a separator.
+    expect(extractReplyBody('Use 2 -- maybe 3 -- tablespoons.')).toBe(
+      'Use 2 -- maybe 3 -- tablespoons.'
+    );
+  });
+
+  it('keeps an ellipsis on its own line', () => {
+    expect(extractReplyBody('Thinking about it\n...\nstill thinking')).toBe(
+      'Thinking about it\n...\nstill thinking'
+    );
+  });
+
+  it('keeps a reply that is only an emoji', () => {
+    expect(extractReplyBody('👍')).toBe('👍');
+  });
+});

@@ -25,6 +25,40 @@ const SIGNATURE_DELIMITER = /^-- $/;
 /** A quoted line, however deeply nested. */
 const QUOTED = /^\s*>/;
 
+/** `Sent from my iPhone` and friends. */
+const MOBILE_SIGNOFF = /^\s*sent from my .+/i;
+
+/** What a mail client leaves in the text part where an image was. */
+const IMAGE_PLACEHOLDER = /^\s*\[image:[^\]]*\]\s*$/i;
+
+/** Nothing but punctuation and symbols. */
+const PUNCTUATION_ONLY = /^[\s\p{P}\p{S}]+$/u;
+
+/** Emoji are symbols too, and a row of them is a reply, not a rule. */
+const EMOJI = /\p{Extended_Pictographic}/u;
+
+/**
+ * The shortest run of symbols treated as a horizontal rule.
+ *
+ * Four, so that an ellipsis on its own line stays. The conventional `-- ` is
+ * shorter than this and is matched exactly by SIGNATURE_DELIMITER instead.
+ */
+const MIN_RULE_LENGTH = 4;
+
+/**
+ * Whether a line is a decorative rule opening a signature block.
+ *
+ * Plenty of signatures have no `-- ` delimiter. What they tend to have is a line
+ * of dashes, underscores, box characters — or, in at least one real case, Morse
+ * code — separating the message from the contact details beneath it.
+ */
+const isSignatureRule = (line: string): boolean => {
+  if (EMOJI.test(line)) return false;
+  if (line.replace(/\s/g, '').length < MIN_RULE_LENGTH) return false;
+
+  return PUNCTUATION_ONLY.test(line);
+};
+
 /**
  * The text the sender added, with quoted history, attribution lines and any
  * signature removed. Returns an empty string when the reply added nothing.
@@ -33,11 +67,17 @@ export const extractReplyBody = (raw: string): string => {
   const kept: string[] = [];
 
   for (const line of raw.split(/\r?\n/)) {
-    if (ATTRIBUTION.test(line) || ORIGINAL_MESSAGE.test(line) || SIGNATURE_DELIMITER.test(line)) {
+    if (
+      ATTRIBUTION.test(line) ||
+      ORIGINAL_MESSAGE.test(line) ||
+      SIGNATURE_DELIMITER.test(line) ||
+      MOBILE_SIGNOFF.test(line) ||
+      isSignatureRule(line)
+    ) {
       break;
     }
 
-    if (QUOTED.test(line)) continue;
+    if (QUOTED.test(line) || IMAGE_PLACEHOLDER.test(line)) continue;
 
     kept.push(line);
   }
