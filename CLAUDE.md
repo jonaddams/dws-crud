@@ -40,19 +40,58 @@ All work should be done in small, incremental changes that maintain a working st
 
 ### Testing Tools
 
-- **Jest** or **Vitest** for testing frameworks
-- **React Testing Library** for React components
+- **Vitest** is the test runner (configured in `vitest.config.mts`)
+- **React Testing Library** + `@testing-library/user-event` for React components
+- **jsdom** is the default environment; server-side code opts out per file (see below)
 - All test code must follow the same TypeScript strict mode rules as production code
+
+**Commands:**
+
+```bash
+pnpm test           # single run
+pnpm test:watch     # watch mode
+pnpm test:coverage  # v8 coverage report (text + html in coverage/)
+pnpm typecheck      # tsc --noEmit
+```
+
+`pnpm pre-commit` runs `biome check --write && typecheck && test && build`.
+
+### Test Environments
+
+`vitest.config.mts` sets `environment: 'jsdom'` globally so component tests work with
+no per-file ceremony. Tests for server-side modules (API route handlers, `lib/*`) declare
+the node environment with a docblock on the first line:
+
+```typescript
+// @vitest-environment node
+```
+
+`vitest.setup.ts` handles three things: it registers `@testing-library/jest-dom`
+matchers, shims `window.matchMedia` (jsdom does not implement it, and
+`ThemeProvider` reads `prefers-color-scheme`), and after each browser-environment test
+unmounts components, clears `localStorage`, and resets `document.documentElement`
+classes. Tests that need a specific media-query result stub `matchMedia` themselves with
+`vi.spyOn` — `restoreMocks: true` puts the shim back afterwards.
+
+Path aliases (`@/*`) resolve through Vite's native `resolve.tsconfigPaths`, which reads
+`tsconfig.json` directly — do not add `vite-tsconfig-paths`, it is redundant on Vite 7+.
 
 ### Test Organization
 
+Tests live beside the code they exercise, named `*.test.ts` / `*.test.tsx`:
+
 ```
-app/
-  components/
-    payment/
-      payment-processor.ts
-      payment-processor.test.ts
+components/
+  theme-toggle.tsx
+  theme-toggle.test.tsx
+lib/
+  auth.ts
+  auth.test.ts
 ```
+
+Import test globals explicitly (`import { describe, expect, it } from 'vitest'`) rather
+than enabling `globals: true` — this keeps the type augmentation working without extra
+`tsconfig.json` entries.
 
 ## Code Quality Standards
 

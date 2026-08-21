@@ -8,10 +8,14 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
     "biome:check": "biome check",
     "biome:fix": "biome check --write",
     "biome:format": "biome format --write",
-    "pre-commit": "biome check --write && npm run build"
+    "pre-commit": "biome check --write && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -31,13 +35,21 @@
     "@biomejs/biome": "^2.3.9",
     "@eslint/eslintrc": "^3.3.3",
     "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.5",
     "@types/node": "^25.0.2",
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.1.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.2",
     "eslint-config-next": "16.0.10",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.1.18",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   }
 }
