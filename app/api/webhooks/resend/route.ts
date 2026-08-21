@@ -136,14 +136,31 @@ export async function POST(request: NextRequest) {
     return ignored('already processed');
   }
 
-  const { commentId } = await addComment({
-    documentId: replyToken.thread.document.documentEngineId,
-    rootAnnotationId: replyToken.thread.rootAnnotationId,
-    authorUserId: replyToken.userId,
-    creatorName: replyToken.user.name ?? replyToken.user.email,
-    text: body,
-    customData: { source: 'email', inboundMessageId: providerMessageId },
-  });
+  let commentId: string;
+
+  try {
+    ({ commentId } = await addComment({
+      documentId: replyToken.thread.document.documentEngineId,
+      rootAnnotationId: replyToken.thread.rootAnnotationId,
+      authorUserId: replyToken.userId,
+      creatorName: replyToken.user.name ?? replyToken.user.email,
+      text: body,
+      customData: { source: 'email', inboundMessageId: providerMessageId },
+    }));
+  } catch (error) {
+    // Release the claim. Holding it after a failed write turns the idempotency
+    // guard into a black hole: Resend retries, the claim is still there, the
+    // retry is answered "already processed", and the reply is lost for good.
+    // Releasing lets the retry do the work, and duplicate protection still holds
+    // for the only case that matters — a write that actually succeeded.
+    await prisma.inboundEmail.delete({ where: { providerMessageId } }).catch(() => {});
+
+    // 500 so Resend retries rather than considering it delivered.
+    return NextResponse.json(
+      { error: 'Could not add the comment', detail: String(error) },
+      { status: 500 }
+    );
+  }
 
   await prisma.inboundEmail.update({
     where: { providerMessageId },
