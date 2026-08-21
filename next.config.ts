@@ -6,10 +6,10 @@ const nextConfig: NextConfig = {
 
   // Configure for Vercel deployment
   env: {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL ||
+    NEXTAUTH_URL:
+      process.env.NEXTAUTH_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
   },
-
 
   // Exclude @nutrient-sdk/viewer from the bundle since we're using the CDN version
   serverExternalPackages: ['@nutrient-sdk/viewer'],

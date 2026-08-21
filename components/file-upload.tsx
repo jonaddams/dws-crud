@@ -79,16 +79,6 @@ export function FileUpload() {
     setDragOver(false);
   }, []);
 
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        document.getElementById(fileUploadId)?.click();
-      }
-    },
-    [fileUploadId]
-  );
-
   const uploadFile = useCallback(
     async (file: File) => {
       setUploadState((prev) => ({ ...prev, isUploading: true, error: null }));
@@ -157,14 +147,16 @@ export function FileUpload() {
         </p>
       </div>
 
-      {/* File drop zone */}
+      {/* File drop zone. Deliberately not a button: the labelled file input inside
+          it is the keyboard-accessible control, and wrapping that in a button would
+          both nest interactive elements and absorb their text into its own name. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop is a
+          pointer-only enhancement here; the labelled file input below provides the
+          equivalent keyboard path, so this element needs no interactive role. */}
       <div
-        role="button"
-        tabIndex={0}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onKeyDown={handleKeyDown}
         className={`relative border-2 border-dashed rounded-lg p-6 transition-colors cursor-pointer ${
           dragOver
             ? 'border-primary bg-primary/10'
