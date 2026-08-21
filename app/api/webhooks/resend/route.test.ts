@@ -8,6 +8,7 @@ const addComment = vi.fn();
 const findUniqueToken = vi.fn();
 const createInbound = vi.fn();
 const updateInbound = vi.fn();
+const deleteInbound = vi.fn();
 const fetchInboundEmail = vi.fn();
 
 vi.mock('@/lib/dws-comments', () => ({ addComment: (...args: unknown[]) => addComment(...args) }));
@@ -20,6 +21,7 @@ vi.mock('@/lib/prisma', () => ({
     inboundEmail: {
       create: (...a: unknown[]) => createInbound(...a),
       update: (...a: unknown[]) => updateInbound(...a),
+      delete: (...a: unknown[]) => deleteInbound(...a),
     },
   },
 }));
@@ -90,6 +92,7 @@ beforeEach(() => {
   findUniqueToken.mockReset().mockResolvedValue(KNOWN_TOKEN);
   createInbound.mockReset().mockResolvedValue({});
   updateInbound.mockReset().mockResolvedValue({});
+  deleteInbound.mockReset().mockResolvedValue({});
   fetchInboundEmail.mockReset().mockResolvedValue({ text: 'Agreed, softening it now.', html: '' });
 });
 
@@ -233,6 +236,34 @@ describe('Surviving a redelivery', () => {
 
     expect(response.status).toBe(200);
     expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('releases the claim when the comment cannot be written', async () => {
+    // Otherwise the idempotency guard becomes a black hole: the retry is turned
+    // away as already processed and the reply is lost for good.
+    addComment.mockRejectedValue(new Error('DWS said 403'));
+
+    const response = await postWebhook(inboundPayload());
+
+    expect(response.status).toBe(500);
+    expect(deleteInbound).toHaveBeenCalledWith({
+      where: { providerMessageId: 'inbound_1' },
+    });
+  });
+
+  it('answers 500 on a failed write so Resend retries rather than giving up', async () => {
+    addComment.mockRejectedValue(new Error('DWS said 403'));
+
+    const response = await postWebhook(inboundPayload());
+
+    expect(response.status).toBe(500);
+  });
+
+  it('keeps the claim when the comment was written', async () => {
+    await postWebhook(inboundPayload());
+
+    expect(deleteInbound).not.toHaveBeenCalled();
+    expect(updateInbound).toHaveBeenCalled();
   });
 
   it('claims the message id before writing the comment', async () => {
