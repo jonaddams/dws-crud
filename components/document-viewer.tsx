@@ -14,12 +14,29 @@ type ViewerError = {
 
 export function DocumentViewer({ documentId, className = '' }: DocumentViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerInstanceRef = useRef<unknown>(null);
+  const viewerInstanceRef = useRef<NutrientViewerInstance | null>(null);
   const isInitializingRef = useRef(false);
   const [error, setError] = useState<ViewerError | null>(null);
   const [viewerData, setViewerData] = useState<{
     sessionToken: string;
+    mentionableUsers: NutrientMentionableUser[];
   } | null>(null);
+
+  /**
+   * Tell the server this document's comments changed.
+   *
+   * Deliberately says nothing about *what* changed. DWS has no webhooks, so the
+   * server needs a nudge to re-read — but it derives the mentions itself, so a
+   * browser cannot cause an email to someone it names. Failures are swallowed:
+   * the next reconcile picks up anything missed.
+   */
+  const requestCommentSync = useCallback(async () => {
+    try {
+      await fetch(`/api/documents/${documentId}/sync-comments`, { method: 'POST' });
+    } catch {
+      // Best effort by design.
+    }
+  }, [documentId]);
 
   // Fetch the viewer data from our API
   const fetchViewerData = useCallback(async () => {
@@ -35,11 +52,19 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
 
       const data = await response.json();
 
-      const viewerDataToSet = {
-        sessionToken: data.sessionToken,
-      };
+      // The mention menu needs the directory. A failure here degrades the mention
+      // menu rather than blocking the document from opening.
+      let mentionableUsers: NutrientMentionableUser[] = [];
+      try {
+        const directoryResponse = await fetch('/api/mentionable-users');
+        if (directoryResponse.ok) {
+          mentionableUsers = (await directoryResponse.json()).mentionableUsers ?? [];
+        }
+      } catch {
+        // Leave the list empty; the viewer still loads.
+      }
 
-      setViewerData(viewerDataToSet);
+      setViewerData({ sessionToken: data.sessionToken, mentionableUsers });
     } catch (error) {
       setError({
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -89,7 +114,12 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
         container: containerRef.current,
         session: viewerData.sessionToken,
         useCDN: true, // Load assets from CDN to avoid future deprecation warnings
+        mentionableUsers: viewerData.mentionableUsers,
       });
+
+      // DWS has no webhooks, so this is how the server learns a comment appeared.
+      // The payload is ignored on purpose — see requestCommentSync.
+      instance.addEventListener('comments.mention', requestCommentSync);
 
       viewerInstanceRef.current = instance;
     } catch (error) {
@@ -101,7 +131,7 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
     } finally {
       isInitializingRef.current = false;
     }
-  }, [viewerData]);
+  }, [viewerData, requestCommentSync]);
 
   // Cleanup function
   const cleanup = useCallback(async () => {
