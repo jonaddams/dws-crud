@@ -1,4 +1,4 @@
-import { reconcileDocument } from '@/lib/comment-sync';
+import { type PendingNotification, reconcileDocument } from '@/lib/comment-sync';
 import { buildMentionEmail } from '@/lib/mention-email';
 import { prisma } from '@/lib/prisma';
 import { createReplyToken, formatReplyAddress } from '@/lib/reply-token';
@@ -40,10 +40,29 @@ const replyAddressFor = async (options: { threadId: string; userId: string }): P
   return formatReplyAddress({ token, domain: replyDomain() });
 };
 
+export type NotifyFailure = {
+  mentionId: string;
+  mentionedUserId: string;
+  /** What went wrong, in enough detail to act on without reproducing it. */
+  reason: string;
+};
+
 export type NotifyResult = {
   sent: number;
   failed: number;
+  /**
+   * Why each unsent notification did not go out; empty when everything sent.
+   *
+   * A count alone cannot be acted on: an unverified sending domain, a missing
+   * API key and a deleted recipient all read as `failed: 1`. Since the mention
+   * is left for the next pass to retry, a reason that is never recorded is a
+   * reason nobody ever sees.
+   */
+  failures: NotifyFailure[];
 };
+
+const reasonFrom = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 /**
  * One delivery failure does not stop the others: each mention is marked notified
@@ -56,7 +75,15 @@ export const notifyPendingMentions = async (options: {
   const pending = await reconcileDocument({ documentId: options.documentId });
 
   let sent = 0;
-  let failed = 0;
+  const failures: NotifyFailure[] = [];
+
+  const record = (mention: PendingNotification, reason: string): void => {
+    failures.push({
+      mentionId: mention.mentionId,
+      mentionedUserId: mention.mentionedUserId,
+      reason,
+    });
+  };
 
   for (const mention of pending) {
     try {
@@ -66,7 +93,7 @@ export const notifyPendingMentions = async (options: {
       });
 
       if (!recipient) {
-        failed += 1;
+        record(mention, 'Mentioned user has no account, so there is nowhere to send to');
         continue;
       }
 
@@ -98,11 +125,12 @@ export const notifyPendingMentions = async (options: {
       });
 
       sent += 1;
-    } catch {
-      // Left unmarked on purpose so the next reconcile tries again.
-      failed += 1;
+    } catch (error) {
+      // Left unmarked on purpose so the next reconcile tries again, and the
+      // reason is kept so a failure that keeps recurring can be diagnosed.
+      record(mention, reasonFrom(error));
     }
   }
 
-  return { sent, failed };
+  return { sent, failed: failures.length, failures };
 };
