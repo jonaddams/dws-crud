@@ -1386,6 +1386,47 @@ The application is **85% complete** and production-ready for core functionality.
 
 **Remaining work focuses on client-side search UI and comprehensive testing to achieve 100% completion.**
 
+## DWS Comment API — verified behaviour
+
+Established by probing the live API on 2026-08-24 with the working key in
+`.env.local`. These are observations, not documentation, and the docs are thin
+here. See also the "Nutrient DWS" notes above.
+
+- **The whole comment layer is verified working**: create a thread, append a
+  comment, fetch comments, list thread roots, delete a thread. If production
+  returns `403` on a comment write while the same request succeeds locally, it is
+  the **API key's permissions**, not the code. Keys differ in what they may write.
+- **A comment cannot be deleted.** There is no delete endpoint for comments in
+  either the DWS Viewer API or the Document Engine API. To remove a comment you
+  delete the thread's **root annotation** —
+  `DELETE /viewer/documents/{doc}/annotations/{rootAnnotationId}` returns 200 and
+  takes the thread's comments with it. This is the only cleanup lever, so treat
+  anything written to a demo document as permanent until the thread goes.
+- **`POST /viewer/sessions` returns the token as `jwt`.** Not `session_token`,
+  not `sessionToken`, not `token`. `lib/nutrient-api.ts` tries all of those and
+  only the last fallback matches, so the earlier branches are dead code.
+- **`user_id` round-trips as `createdBy`,** and `customData` round-trips intact —
+  both confirmed by writing and reading back. This is what lets an emailed reply
+  be attributed to a real account rather than a display name.
+- **Check the licence in the session JWT, not the docs.** Decode the payload and
+  read `allowed_operations`; this project's key carries `comments`,
+  `comments_api` and `instant`.
+
+### Replaying a real inbound email
+
+Resend retains delivered webhook events, and they are the only trustworthy
+fixture for `email.received` — a handwritten one already shipped a silent bug by
+inventing a `text` field that Resend never sends.
+
+```
+GET /webhooks/{webhookId}/events            # list recent deliveries
+GET /webhooks/{webhookId}/events/{eventId}  # the exact payload that was sent
+```
+
+Replaying one end-to-end needs the reply token in the event to exist in whichever
+database the app is pointed at; tokens minted in production are not in the local
+database.
+
 ## Summary
 
 The key is to write clean, testable, functional code that evolves through small, safe increments. Every change should be driven by a test that describes the desired behavior, and the implementation should be the simplest thing that makes that test pass. When in doubt, favor simplicity and readability over cleverness.
