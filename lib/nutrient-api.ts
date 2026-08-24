@@ -1,3 +1,5 @@
+import { viewerApiKey } from '@/lib/nutrient-key';
+
 export interface NutrientAPIUploadResponse {
   sessionToken: string;
   documentId: string;
@@ -24,14 +26,7 @@ class NutrientAPIService {
   private baseUrl: string;
 
   constructor() {
-    const apiKey = process.env.NUTRIENT_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        'Missing Nutrient API key: NUTRIENT_API_KEY environment variable is required'
-      );
-    }
-
-    this.apiKey = apiKey;
+    this.apiKey = viewerApiKey();
     this.baseUrl = process.env.NUTRIENT_API_BASE_URL || 'https://api.nutrient.io/viewer/documents';
   }
 

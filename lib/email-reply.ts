@@ -19,8 +19,19 @@ const ATTRIBUTION = /^\s*On .+ wrote:\s*$/i;
 /** Outlook and similar. */
 const ORIGINAL_MESSAGE = /^\s*-{2,}\s*(original message|forwarded message)\s*-{2,}\s*$/i;
 
-/** The conventional signature delimiter is exactly two hyphens and a space. */
-const SIGNATURE_DELIMITER = /^-- $/;
+/**
+ * The conventional signature delimiter: two hyphens and a space, per RFC 3676.
+ *
+ * The trailing space is optional here because mail servers and clients strip
+ * trailing whitespace often enough that the delimiter routinely arrives as a
+ * bare `--`. That form is too short for `isSignatureRule`, whose four-character
+ * minimum protects an ellipsis, so without this it would survive into the
+ * comment — as it did on the first live round trip.
+ *
+ * A line of exactly two hyphens is a delimiter rather than prose; a dash used
+ * mid-sentence is not on a line of its own and is unaffected.
+ */
+const SIGNATURE_DELIMITER = /^--[ \t]*$/;
 
 /** A quoted line, however deeply nested. */
 const QUOTED = /^\s*>/;

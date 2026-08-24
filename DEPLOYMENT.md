@@ -20,7 +20,9 @@ Set up the following environment variables in Vercel:
 
 ```bash
 # Nutrient API Configuration
-NUTRIENT_API_KEY=your_nutrient_api_key_here
+# The Viewer key. A Nutrient account also issues a Processor key; they are not
+# interchangeable, and the Processor key is not used by this app.
+NUTRIENT_VIEWER_API_KEY=your_nutrient_viewer_api_key_here
 NUTRIENT_API_BASE_URL=https://api.nutrient.io/viewer/documents
 NUTRIENT_VIEWER_VERSION=1.7.0
 
@@ -43,10 +45,19 @@ GOOGLE_CLIENT_SECRET=your_google_client_secret_here
 openssl rand -base64 32
 ```
 
-**NUTRIENT_API_KEY**:
+**NUTRIENT_VIEWER_API_KEY**:
 1. Visit [Nutrient Dashboard](https://dashboard.nutrient.io/)
 2. Create a new API key with viewer permissions
 3. Copy the key (starts with `pdf_live_`)
+
+Take the **Viewer** key, not the Processor key. Both start with `pdf_live_`
+and are the same length, so they are easy to swap by mistake. The Processor
+key answers `403 Forbidden` to every Viewer request, including ones that name
+no document — so a 403 on *everything*, rather than on writes alone, usually
+means the wrong key of the two.
+
+The old single-name `NUTRIENT_API_KEY` is still read as a fallback, so an
+existing deployment keeps working until it is renamed.
 
 ## Database Setup
 
@@ -218,7 +229,9 @@ If using a custom domain:
 - For Neon databases, ensure `?sslmode=require` is in the connection string
 
 **Nutrient API Issues**:
-- Verify `NUTRIENT_API_KEY` is valid and has correct permissions
+- Verify `NUTRIENT_VIEWER_API_KEY` is the Viewer key, not the Processor key —
+  a 403 on every Viewer call, including `GET /viewer/documents`, means the wrong
+  one of the two. A 403 on writes alone means the right key without write access.
 - Check API key quotas and limits
 - Ensure `NUTRIENT_VIEWER_VERSION` matches available version
 

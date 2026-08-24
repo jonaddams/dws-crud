@@ -64,6 +64,15 @@ describe('Reading what someone actually wrote back', () => {
     expect(extractReplyBody('\n\n  Fine by me.  \n\n\n')).toBe('Fine by me.');
   });
 
+  it('drops a signature when the delimiter lost its trailing space in transit', () => {
+    // RFC 3676 writes the delimiter as "-- ", but plenty of mail servers and
+    // clients strip trailing whitespace, so it arrives as a bare "--". Observed
+    // against the live round trip, where the signature survived into the comment.
+    const raw = ['Happy with that.', '', '--', 'Bob Example', 'Nutrient'].join('\n');
+
+    expect(extractReplyBody(raw)).toBe('Happy with that.');
+  });
+
   it('does not mistake a hyphen for a signature delimiter', () => {
     // A signature delimiter is exactly "-- ", not any dashed line.
     expect(extractReplyBody('Use the en-dash --- it reads better.')).toBe(

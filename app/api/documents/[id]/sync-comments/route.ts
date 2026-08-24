@@ -36,7 +36,15 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
 
     const result = await notifyPendingMentions({ documentId: document.id });
 
-    return NextResponse.json(result);
+    // Only the classified code crosses the boundary. `reason` carries whatever
+    // Resend, Prisma or DWS said, which is written for an operator and can name
+    // environment variables, hosts and internal identifiers — the same reason
+    // the catch below answers with a fixed string rather than the error.
+    return NextResponse.json({
+      sent: result.sent,
+      failed: result.failed,
+      failures: result.failures.map(({ mentionId, code }) => ({ mentionId, code })),
+    });
   } catch (error) {
     if (error instanceof Error && error.message === 'Authentication required') {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });

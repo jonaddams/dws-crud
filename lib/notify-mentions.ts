@@ -1,4 +1,4 @@
-import { reconcileDocument } from '@/lib/comment-sync';
+import { type PendingNotification, reconcileDocument } from '@/lib/comment-sync';
 import { buildMentionEmail } from '@/lib/mention-email';
 import { prisma } from '@/lib/prisma';
 import { createReplyToken, formatReplyAddress } from '@/lib/reply-token';
@@ -40,10 +40,45 @@ const replyAddressFor = async (options: { threadId: string; userId: string }): P
   return formatReplyAddress({ token, domain: replyDomain() });
 };
 
+/**
+ * Why a notification did not go out, in a form that is safe to hand to a caller.
+ *
+ * `no-account` is a data problem and will not fix itself on a retry;
+ * `delivery-failed` is anything that went wrong on the way out and is retried on
+ * the next pass.
+ */
+export type NotifyFailureCode = 'no-account' | 'delivery-failed';
+
+export type NotifyFailure = {
+  mentionId: string;
+  mentionedUserId: string;
+  code: NotifyFailureCode;
+  /**
+   * Upstream detail — a Resend rejection body, a Prisma error, a DWS response.
+   *
+   * Server-side only. It is written by systems that know nothing about who is
+   * asking, so it can name environment variables, hosts and internal
+   * identifiers. Callers get `code`; this stays here.
+   */
+  reason: string;
+};
+
 export type NotifyResult = {
   sent: number;
   failed: number;
+  /**
+   * Why each unsent notification did not go out; empty when everything sent.
+   *
+   * A count alone cannot be acted on: an unverified sending domain, a missing
+   * API key and a deleted recipient all read as `failed: 1`. Since the mention
+   * is left for the next pass to retry, a reason that is never recorded is a
+   * reason nobody ever sees.
+   */
+  failures: NotifyFailure[];
 };
+
+const reasonFrom = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 /**
  * One delivery failure does not stop the others: each mention is marked notified
@@ -56,7 +91,16 @@ export const notifyPendingMentions = async (options: {
   const pending = await reconcileDocument({ documentId: options.documentId });
 
   let sent = 0;
-  let failed = 0;
+  const failures: NotifyFailure[] = [];
+
+  const record = (mention: PendingNotification, code: NotifyFailureCode, reason: string): void => {
+    failures.push({
+      mentionId: mention.mentionId,
+      mentionedUserId: mention.mentionedUserId,
+      code,
+      reason,
+    });
+  };
 
   for (const mention of pending) {
     try {
@@ -66,7 +110,11 @@ export const notifyPendingMentions = async (options: {
       });
 
       if (!recipient) {
-        failed += 1;
+        record(
+          mention,
+          'no-account',
+          'Mentioned user has no account, so there is nowhere to send to'
+        );
         continue;
       }
 
@@ -98,11 +146,12 @@ export const notifyPendingMentions = async (options: {
       });
 
       sent += 1;
-    } catch {
-      // Left unmarked on purpose so the next reconcile tries again.
-      failed += 1;
+    } catch (error) {
+      // Left unmarked on purpose so the next reconcile tries again, and the
+      // reason is kept so a failure that keeps recurring can be diagnosed.
+      record(mention, 'delivery-failed', reasonFrom(error));
     }
   }
 
-  return { sent, failed };
+  return { sent, failed: failures.length, failures };
 };
