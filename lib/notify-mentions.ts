@@ -40,10 +40,26 @@ const replyAddressFor = async (options: { threadId: string; userId: string }): P
   return formatReplyAddress({ token, domain: replyDomain() });
 };
 
+/**
+ * Why a notification did not go out, in a form that is safe to hand to a caller.
+ *
+ * `no-account` is a data problem and will not fix itself on a retry;
+ * `delivery-failed` is anything that went wrong on the way out and is retried on
+ * the next pass.
+ */
+export type NotifyFailureCode = 'no-account' | 'delivery-failed';
+
 export type NotifyFailure = {
   mentionId: string;
   mentionedUserId: string;
-  /** What went wrong, in enough detail to act on without reproducing it. */
+  code: NotifyFailureCode;
+  /**
+   * Upstream detail — a Resend rejection body, a Prisma error, a DWS response.
+   *
+   * Server-side only. It is written by systems that know nothing about who is
+   * asking, so it can name environment variables, hosts and internal
+   * identifiers. Callers get `code`; this stays here.
+   */
   reason: string;
 };
 
@@ -77,10 +93,11 @@ export const notifyPendingMentions = async (options: {
   let sent = 0;
   const failures: NotifyFailure[] = [];
 
-  const record = (mention: PendingNotification, reason: string): void => {
+  const record = (mention: PendingNotification, code: NotifyFailureCode, reason: string): void => {
     failures.push({
       mentionId: mention.mentionId,
       mentionedUserId: mention.mentionedUserId,
+      code,
       reason,
     });
   };
@@ -93,7 +110,11 @@ export const notifyPendingMentions = async (options: {
       });
 
       if (!recipient) {
-        record(mention, 'Mentioned user has no account, so there is nowhere to send to');
+        record(
+          mention,
+          'no-account',
+          'Mentioned user has no account, so there is nowhere to send to'
+        );
         continue;
       }
 
@@ -128,7 +149,7 @@ export const notifyPendingMentions = async (options: {
     } catch (error) {
       // Left unmarked on purpose so the next reconcile tries again, and the
       // reason is kept so a failure that keeps recurring can be diagnosed.
-      record(mention, reasonFrom(error));
+      record(mention, 'delivery-failed', reasonFrom(error));
     }
   }
 

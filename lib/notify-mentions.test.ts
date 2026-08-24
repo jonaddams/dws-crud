@@ -113,9 +113,20 @@ describe('Notifying people who were mentioned', () => {
       expect.objectContaining({
         mentionId: 'mention_1',
         mentionedUserId: 'user_bob',
+        code: 'delivery-failed',
         reason: expect.stringContaining('domain not verified'),
       }),
     ]);
+  });
+
+  it('keeps upstream detail out of the category, so a caller can be told one without the other', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    sendEmail.mockRejectedValue(new Error('Missing RESEND_KEY: cannot send email'));
+
+    const result = await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(result.failures[0].code).toBe('delivery-failed');
+    expect(result.failures[0].reason).toContain('RESEND_KEY');
   });
 
   it('reports a mention aimed at someone who no longer has an account', async () => {
@@ -129,6 +140,7 @@ describe('Notifying people who were mentioned', () => {
     expect(result.failures[0]).toEqual(
       expect.objectContaining({
         mentionedUserId: 'user_bob',
+        code: 'no-account',
         reason: expect.stringMatching(/no account|unknown|not found/i),
       })
     );
