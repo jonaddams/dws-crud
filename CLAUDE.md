@@ -1392,10 +1392,17 @@ Established by probing the live API on 2026-08-24 with the working key in
 `.env.local`. These are observations, not documentation, and the docs are thin
 here. See also the "Nutrient DWS" notes above.
 
+- **There are two keys, and only one of them works here.** A Nutrient account
+  issues a **Viewer** key and a **Processor** key. Both start with `pdf_live_`
+  and are 52 characters, so they are easy to swap by mistake. Everything this app
+  does is the Viewer API, and the Processor key answers `403 Forbidden` to every
+  Viewer request — including `GET /viewer/documents`, which names no document.
+  Read them from `NUTRIENT_VIEWER_API_KEY` via `lib/nutrient-key.ts`.
+- **Read the shape of a 403 before blaming permissions.** A 403 on *every* call
+  including org-level listing means the wrong key of the two. A 403 on writes
+  while reads succeed means the right key without write access.
 - **The whole comment layer is verified working**: create a thread, append a
-  comment, fetch comments, list thread roots, delete a thread. If production
-  returns `403` on a comment write while the same request succeeds locally, it is
-  the **API key's permissions**, not the code. Keys differ in what they may write.
+  comment, fetch comments, list thread roots, delete a thread.
 - **A comment cannot be deleted.** There is no delete endpoint for comments in
   either the DWS Viewer API or the Document Engine API. To remove a comment you
   delete the thread's **root annotation** —
