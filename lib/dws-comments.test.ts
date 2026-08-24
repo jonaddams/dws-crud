@@ -121,8 +121,20 @@ describe('Talking to DWS', () => {
 
   it('refuses to run without an API key', async () => {
     vi.stubEnv('NUTRIENT_API_KEY', '');
+    vi.stubEnv('NUTRIENT_VIEWER_API_KEY', '');
 
-    await expect(createCommentThread(THREAD_ROOT)).rejects.toThrow(/NUTRIENT_API_KEY/);
+    await expect(createCommentThread(THREAD_ROOT)).rejects.toThrow(/NUTRIENT_VIEWER_API_KEY/);
+  });
+
+  it('uses the viewer key in preference to the old single-key name', async () => {
+    const fetchMock = mockFetch(
+      jsonResponse({ data: { annotation: { id: 'anno_1' }, comments: [{ id: 'cmt_1' }] } })
+    );
+    vi.stubEnv('NUTRIENT_VIEWER_API_KEY', 'viewer-key');
+
+    await createCommentThread(THREAD_ROOT);
+
+    expect(lastRequest(fetchMock).headers.Authorization).toBe('Bearer viewer-key');
   });
 });
 

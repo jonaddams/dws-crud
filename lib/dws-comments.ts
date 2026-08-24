@@ -16,6 +16,8 @@
  *   display string only, so both are sent: one for truth, one for the UI.
  */
 
+import { viewerApiKey } from '@/lib/nutrient-key';
+
 const DWS_BASE_URL = process.env.NUTRIENT_API_BASE_URL_ROOT ?? 'https://api.nutrient.io';
 
 export type Rect = [left: number, top: number, width: number, height: number];
@@ -45,21 +47,11 @@ type DwsAnnotationResponse = {
   content?: { isCommentThreadRoot?: boolean } | null;
 };
 
-const requireApiKey = (): string => {
-  const apiKey = process.env.NUTRIENT_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('Missing NUTRIENT_API_KEY: cannot reach the DWS Viewer API');
-  }
-
-  return apiKey;
-};
-
 const request = async (path: string, init: RequestInit = {}): Promise<unknown> => {
   const response = await fetch(`${DWS_BASE_URL}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${requireApiKey()}`,
+      Authorization: `Bearer ${viewerApiKey()}`,
       // DWS returns 406 for a wildcard Accept header.
       Accept: 'application/json',
       'Content-Type': 'application/json',
