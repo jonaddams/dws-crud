@@ -22,8 +22,11 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
-    // Build where clause with search and filters
-    const whereClause: Prisma.DocumentWhereInput = { ...baseFilter };
+    // Search and filters are collected separately and combined with the access
+    // filter under AND. Spreading them into one object would let `OR` here
+    // overwrite the `OR` that expresses who may see what, turning a search into
+    // a listing of every document in the database.
+    const whereClause: Prisma.DocumentWhereInput = {};
 
     // Add search functionality - search across title, filename, and author
     if (search) {
@@ -60,7 +63,7 @@ export async function GET(request: NextRequest) {
     const finalSortOrder = validSortOrders.includes(sortOrder) ? sortOrder : 'desc';
 
     const documents = await prisma.document.findMany({
-      where: whereClause,
+      where: { AND: [baseFilter, whereClause] },
       select: {
         id: true,
         documentEngineId: true,

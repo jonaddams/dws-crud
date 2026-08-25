@@ -118,6 +118,20 @@ export const notifyPendingMentions = async (options: {
         continue;
       }
 
+      // Being mentioned grants read access, before the email rather than after.
+      // A notification that leads to a document the reader is refused is worse
+      // than no notification, and that refusal would outlive a failed send.
+      await prisma.documentShare.upsert({
+        where: {
+          documentId_userId: {
+            documentId: mention.documentId,
+            userId: mention.mentionedUserId,
+          },
+        },
+        create: { documentId: mention.documentId, userId: mention.mentionedUserId },
+        update: {},
+      });
+
       const replyAddress = await replyAddressFor({
         threadId: mention.threadId,
         userId: mention.mentionedUserId,
