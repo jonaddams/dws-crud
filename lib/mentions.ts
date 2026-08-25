@@ -26,6 +26,23 @@ export type DirectoryUser = {
 /** `@` followed by an email-ish token: `@bob` or `@bob@nutrient.io`. */
 const MENTION_TOKEN = /(^|[^\w@])@([\w.+-]+(?:@[\w.-]+\.[a-z]{2,})?)/gi;
 
+/** How the viewer marks up a mention: `<span data-user-id="...">Name</span>`. */
+const MARKED_UP_MENTION = /data-user-id=["']([^"']+)["']/gi;
+
+/**
+ * User IDs the viewer marked up in the comment body.
+ *
+ * The SDK does not hand us a mention list — it writes the mention into the text
+ * as markup and leaves `customData` empty. That is exact identity, same as a
+ * recorded list, so it is trusted the same way and read before falling back to
+ * guessing at `@` tokens.
+ */
+const markedUpMentions = (text: string): string[] | null => {
+  const ids = [...text.matchAll(MARKED_UP_MENTION)].map(([, id]) => id);
+
+  return ids.length > 0 ? ids : null;
+};
+
 const recordedMentions = (customData: Record<string, unknown> | null): string[] | null => {
   const mentions = customData?.mentions;
 
@@ -69,7 +86,9 @@ export const extractMentionedUserIds = (options: ExtractMentionedUserIdsOptions)
 
   const known = new Set(directory.map((user) => user.id));
   const candidates =
-    recordedMentions(comment.customData) ?? mentionsInText(comment.text, directory);
+    recordedMentions(comment.customData) ??
+    markedUpMentions(comment.text) ??
+    mentionsInText(comment.text, directory);
 
   return [...new Set(candidates)].filter((id) => known.has(id) && id !== comment.authorUserId);
 };

@@ -13,6 +13,61 @@ const getOptions = (overrides: Partial<MentionEmailOptions> = {}): MentionEmailO
   ...overrides,
 });
 
+describe('Comment text that arrived as markup', () => {
+  // The viewer stores comments as HTML. Escaping it without flattening it first
+  // shows the reader the tags.
+  const FROM_VIEWER =
+    '<p><span data-user-id="user_bob">Bob Example</span> could you check this?</p>';
+
+  it('reads as prose rather than markup', () => {
+    const email = buildMentionEmail(getOptions({ commentText: FROM_VIEWER }));
+
+    expect(email.text).toContain('Bob Example could you check this?');
+    expect(email.text).not.toContain('<span');
+    expect(email.text).not.toContain('data-user-id');
+  });
+
+  it('puts no tags in the HTML part either', () => {
+    const email = buildMentionEmail(getOptions({ commentText: FROM_VIEWER }));
+
+    expect(email.html).not.toContain('data-user-id');
+    expect(email.html).toContain('Bob Example could you check this?');
+  });
+
+  it('keeps paragraphs and line breaks apart', () => {
+    const email = buildMentionEmail(
+      getOptions({ commentText: '<p>First point</p><p>Second point<br>and a break</p>' })
+    );
+
+    expect(email.text).toContain('First point');
+    expect(email.text).toContain('Second point');
+    expect(email.text).toContain('and a break');
+    expect(email.text).not.toContain('First pointSecond point');
+  });
+
+  it('decodes entities instead of showing them', () => {
+    const email = buildMentionEmail(
+      getOptions({ commentText: '<p>Tighten &amp; clarify clause 3 &lt; 4</p>' })
+    );
+
+    expect(email.text).toContain('Tighten & clarify clause 3 < 4');
+  });
+
+  it('still escapes markup so a comment cannot inject into the email', () => {
+    const email = buildMentionEmail(
+      getOptions({ commentText: '<p>look</p><script>alert(1)</script>' })
+    );
+
+    expect(email.html).not.toContain('<script>');
+  });
+
+  it('leaves a plain comment untouched', () => {
+    const email = buildMentionEmail(getOptions({ commentText: 'Can we tighten this clause?' }));
+
+    expect(email.text).toContain('Can we tighten this clause?');
+  });
+});
+
 describe('The mention notification email', () => {
   it('says who mentioned them and where, in the subject', () => {
     const email = buildMentionEmail(getOptions());
@@ -60,9 +115,20 @@ describe('Comment text is untrusted input', () => {
       getOptions({ commentText: '<img src=x onerror="alert(1)">hello' })
     );
 
+    // The tag is removed by flattening rather than escaped into visible text,
+    // so the assertion is on the property — nothing live reaches the reader.
     expect(email.html).not.toContain('<img');
-    expect(email.html).toContain('&lt;img');
+    expect(email.html).not.toContain('onerror');
     expect(email.html).toContain('hello');
+  });
+
+  it('escapes what survives flattening, so the escape is not bypassed', () => {
+    // A "<" with no tag name after it is prose, so flattening leaves it. That is
+    // exactly the input the escape has to catch, and this fails if it is ever
+    // dropped on the assumption that flattening already made the text safe.
+    const email = buildMentionEmail(getOptions({ commentText: 'a < b' }));
+
+    expect(email.html).toContain('a &lt; b');
   });
 
   it('escapes a document title that contains markup', () => {

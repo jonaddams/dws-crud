@@ -49,6 +49,63 @@ describe('Mentions recorded by the viewer', () => {
   });
 });
 
+describe('Mentions typed into the viewer', () => {
+  // What the SDK actually stores. Captured from a live comment: the mention is
+  // markup, there is no customData, and no "@handle" text to fall back on.
+  it('reads the user the SDK marked up in the comment body', () => {
+    const comment = getComment({
+      text: '<p><span data-user-id="user_bob">Bob Example</span> could you check this?</p>',
+      customData: null,
+    });
+
+    expect(mentionedIn(comment)).toEqual(['user_bob']);
+  });
+
+  it('finds several people marked up in one comment', () => {
+    const comment = getComment({
+      text:
+        '<p><span data-user-id="user_bob">Bob</span> and ' +
+        '<span data-user-id="user_carol">Carol</span> please review</p>',
+    });
+
+    expect(mentionedIn(comment)).toEqual(['user_bob', 'user_carol']);
+  });
+
+  it('accepts single-quoted attributes', () => {
+    const comment = getComment({
+      text: "<p><span data-user-id='user_bob'>Bob</span> hi</p>",
+    });
+
+    expect(mentionedIn(comment)).toEqual(['user_bob']);
+  });
+
+  it('still excludes the author when they mark up their own name', () => {
+    const comment = getComment({
+      text: '<p><span data-user-id="user_alice">Alice</span> noting this for myself</p>',
+      authorUserId: 'user_alice',
+    });
+
+    expect(mentionedIn(comment)).toEqual([]);
+  });
+
+  it('ignores a marked-up id that matches nobody we know', () => {
+    const comment = getComment({
+      text: '<p><span data-user-id="user_ghost">Ghost</span> hello</p>',
+    });
+
+    expect(mentionedIn(comment)).toEqual([]);
+  });
+
+  it('prefers the recorded list when the SDK supplies both', () => {
+    const comment = getComment({
+      text: '<p><span data-user-id="user_carol">Carol</span></p>',
+      customData: { mentions: ['user_bob'] },
+    });
+
+    expect(mentionedIn(comment)).toEqual(['user_bob']);
+  });
+});
+
 describe('Mentions written by hand, as in an emailed reply', () => {
   // A comment arriving by email has no customData, so the text is all we have.
 
