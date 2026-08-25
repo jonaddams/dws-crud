@@ -50,6 +50,16 @@ declare global {
   type NutrientViewerInstance = {
     addEventListener(event: 'comments.mention', handler: (payload: unknown) => void): void;
     removeEventListener(event: 'comments.mention', handler: (payload: unknown) => void): void;
+
+    /**
+     * Display name recorded on whatever this reader creates.
+     *
+     * Defaults to null, which the viewer renders as "Anonymous". The session JWT
+     * carries `user_id`, so DWS already records *who* authored a comment; this is
+     * the separate human-readable string shown beside it, and the SDK has no way
+     * to know it otherwise.
+     */
+    setAnnotationCreatorName(name: string | null): void;
   };
 
   interface Window {

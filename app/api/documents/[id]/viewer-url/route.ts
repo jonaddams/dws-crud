@@ -55,6 +55,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({
       sessionToken,
       documentId: document.documentEngineId,
+      // The viewer has no other way to learn this. The session JWT carries
+      // `user_id`, so DWS records who authored a comment, but the name shown
+      // beside it is a separate string the SDK defaults to null — which it
+      // renders as "Anonymous".
+      currentUserName: session.user.name ?? session.user.email,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Authentication required') {
