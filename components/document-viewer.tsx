@@ -20,6 +20,7 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
   const [viewerData, setViewerData] = useState<{
     sessionToken: string;
     mentionableUsers: NutrientMentionableUser[];
+    currentUserName: string | null;
   } | null>(null);
 
   /**
@@ -64,7 +65,11 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
         // Leave the list empty; the viewer still loads.
       }
 
-      setViewerData({ sessionToken: data.sessionToken, mentionableUsers });
+      setViewerData({
+        sessionToken: data.sessionToken,
+        mentionableUsers,
+        currentUserName: data.currentUserName ?? null,
+      });
     } catch (error) {
       setError({
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -116,6 +121,11 @@ export function DocumentViewer({ documentId, className = '' }: DocumentViewerPro
         useCDN: true, // Load assets from CDN to avoid future deprecation warnings
         mentionableUsers: viewerData.mentionableUsers,
       });
+
+      // Without this the reader's own comments are labelled "Anonymous". DWS
+      // records the author from the session's `user_id` either way; this is the
+      // display name shown beside it, which the SDK cannot know on its own.
+      instance.setAnnotationCreatorName(viewerData.currentUserName);
 
       // DWS has no webhooks, so this is how the server learns a comment appeared.
       // The payload is ignored on purpose — see requestCommentSync.
