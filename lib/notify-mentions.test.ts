@@ -9,6 +9,7 @@ const findUniqueUser = vi.fn();
 const findUniqueReplyToken = vi.fn();
 const createReplyTokenRow = vi.fn();
 const updateMention = vi.fn();
+const upsertShare = vi.fn();
 
 vi.mock('@/lib/comment-sync', () => ({
   reconcileDocument: (...args: unknown[]) => reconcileDocument(...args),
@@ -22,6 +23,7 @@ vi.mock('@/lib/prisma', () => ({
       create: (...a: unknown[]) => createReplyTokenRow(...a),
     },
     commentMention: { update: (...a: unknown[]) => updateMention(...a) },
+    documentShare: { upsert: (...a: unknown[]) => upsertShare(...a) },
   },
 }));
 
@@ -49,6 +51,7 @@ beforeEach(() => {
   findUniqueReplyToken.mockReset().mockResolvedValue({ token: 'existingtoken234567' });
   createReplyTokenRow.mockReset().mockResolvedValue({ token: 'freshtoken234567abc' });
   updateMention.mockReset().mockResolvedValue({});
+  upsertShare.mockReset().mockResolvedValue({});
 });
 
 describe('Notifying people who were mentioned', () => {
@@ -161,6 +164,38 @@ describe('Notifying people who were mentioned', () => {
     expect(result.failed).toBe(1);
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].mentionId).toBe('mention_1');
+  });
+
+  it('gives the mentioned person access to the document', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+
+    await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(upsertShare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { documentId_userId: { documentId: 'doc_1', userId: 'user_bob' } },
+        create: { documentId: 'doc_1', userId: 'user_bob' },
+      })
+    );
+  });
+
+  it('grants access even when the email fails, since the mention still happened', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    sendEmail.mockRejectedValue(new Error('mailbox full'));
+
+    const result = await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(upsertShare).toHaveBeenCalled();
+    expect(result.failed).toBe(1);
+  });
+
+  it('does not grant access to someone with no account', async () => {
+    findUniqueUser.mockResolvedValue(null);
+    reconcileDocument.mockResolvedValue([mention()]);
+
+    await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(upsertShare).not.toHaveBeenCalled();
   });
 
   it('reports nothing when there is nothing to notify', async () => {

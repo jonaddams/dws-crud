@@ -1,5 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { getEffectiveDocumentFilter, requireAuth, type SessionUser } from '@/lib/auth';
+import {
+  getDocumentWriteFilter,
+  getEffectiveDocumentFilter,
+  requireAuth,
+  type SessionUser,
+} from '@/lib/auth';
 import { nutrientAPIService } from '@/lib/nutrient-api';
 import { prisma } from '@/lib/prisma';
 
@@ -67,7 +72,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params;
     const session = await requireAuth();
-    const filter = getEffectiveDocumentFilter(session.user as SessionUser);
+    const filter = getDocumentWriteFilter(session.user as SessionUser);
 
     const { title, author } = await request.json();
 
@@ -136,7 +141,7 @@ export async function DELETE(
   try {
     const { id } = await params;
     const session = await requireAuth();
-    const filter = getEffectiveDocumentFilter(session.user as SessionUser);
+    const filter = getDocumentWriteFilter(session.user as SessionUser);
 
     // Check if document exists and user has access
     const document = await prisma.document.findFirst({
