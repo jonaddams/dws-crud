@@ -89,6 +89,33 @@ describe('registration', () => {
     expect(body).toContain('<Response>');
     expect(body.toLowerCase()).toContain('registered');
   });
+
+  it('tells the sender a code has expired rather than posting it as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'expired' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('expired');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('tells the sender a number is already registered elsewhere rather than posting it as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'phone-in-use' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('already registered');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('tells a throttled sender to wait rather than posting their guess as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'too-many-attempts' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('too many attempts');
+    expect(addComment).not.toHaveBeenCalled();
+  });
 });
 
 describe('replies', () => {

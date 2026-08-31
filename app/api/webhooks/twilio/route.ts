@@ -95,23 +95,33 @@ export async function POST(request: Request) {
   // Task 8 inserts STOP/HELP/START keyword handling here, before the
   // verification-code check below.
 
-  // Registration first — see the ordering note above.
+  // Registration first — see the ordering note above. This is an exhaustive
+  // switch, not a chain of ifs, on purpose: a chain of ifs is exactly how the
+  // `expired` variant went unhandled and silently fell through to the reply
+  // path, posting the literal verification code as a comment. The `default`
+  // branch below only compiles because every named status is handled above
+  // it — add a fifth `RedeemResult` variant and this file fails to build
+  // until it is given a branch too.
   const redeemed = await redeemPhoneVerification({ code: body, phone: from });
 
-  if (redeemed.status === 'verified') {
-    return twiml("You're registered. You'll get a text when someone mentions you.");
+  switch (redeemed.status) {
+    case 'verified':
+      return twiml("You're registered. You'll get a text when someone mentions you.");
+    case 'phone-in-use':
+      return twiml('That number is already registered to a different account.');
+    case 'too-many-attempts':
+      return twiml('Too many attempts. Please wait and request a new code.');
+    case 'expired':
+      return twiml('That code has expired. Please request a new one.');
+    case 'no-match':
+      // This text was never a verification code attempt — fall through and
+      // treat it as a reply. This is the only status that means that.
+      break;
+    default: {
+      const unreachable: never = redeemed;
+      throw new Error(`Unhandled phone verification status: ${JSON.stringify(unreachable)}`);
+    }
   }
-
-  if (redeemed.status === 'phone-in-use') {
-    return twiml('That number is already registered to a different account.');
-  }
-
-  if (redeemed.status === 'too-many-attempts') {
-    return twiml('Too many attempts. Please wait and request a new code.');
-  }
-
-  // redeemed.status === 'no-match': this text was never a verification code
-  // attempt (or the code has expired) — fall through and treat it as a reply.
 
   const sender = await prisma.user.findFirst({
     where: { phone: from, phoneVerifiedAt: { not: null }, smsOptedOutAt: null },
