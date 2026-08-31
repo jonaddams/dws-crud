@@ -1,0 +1,329 @@
+// @vitest-environment node
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const verifyTwilioSignature = vi.fn();
+const redeemPhoneVerification = vi.fn();
+const looksLikeVerificationCode = vi.fn();
+const addComment = vi.fn();
+const sendSms = vi.fn();
+const findFirstUser = vi.fn();
+const findFirstMention = vi.fn();
+const createInboundSms = vi.fn();
+const deleteInboundSms = vi.fn();
+const updateInboundSms = vi.fn();
+const updateManyUsers = vi.fn();
+
+vi.mock('@/lib/twilio', () => ({
+  verifyTwilioSignature: (...a: unknown[]) => verifyTwilioSignature(...a),
+  sendSms: (...a: unknown[]) => sendSms(...a),
+}));
+vi.mock('@/lib/phone-verification', () => ({
+  redeemPhoneVerification: (...a: unknown[]) => redeemPhoneVerification(...a),
+  looksLikeVerificationCode: (...a: unknown[]) => looksLikeVerificationCode(...a),
+}));
+vi.mock('@/lib/dws-comments', () => ({ addComment: (...a: unknown[]) => addComment(...a) }));
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    user: {
+      findFirst: (...a: unknown[]) => findFirstUser(...a),
+      updateMany: (...a: unknown[]) => updateManyUsers(...a),
+    },
+    commentMention: { findFirst: (...a: unknown[]) => findFirstMention(...a) },
+    inboundSms: {
+      create: (...a: unknown[]) => createInboundSms(...a),
+      delete: (...a: unknown[]) => deleteInboundSms(...a),
+      update: (...a: unknown[]) => updateInboundSms(...a),
+    },
+  },
+}));
+
+const { POST } = await import('@/app/api/webhooks/twilio/route');
+
+const post = (params: Record<string, string>) =>
+  new Request('https://example.com/api/webhooks/twilio', {
+    method: 'POST',
+    headers: { 'x-twilio-signature': 'sig', 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+  });
+
+const inboundReply = {
+  From: '+15551234567',
+  Body: 'Looks good to me',
+  MessageSid: 'SM123',
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv('TWILIO_AUTH_TOKEN', 'token');
+  verifyTwilioSignature.mockReturnValue(true);
+  // Mirrors the real `looksLikeVerificationCode` shape check (4 chars from the
+  // code alphabet), so tests that send a code-shaped body ('AB12') and tests
+  // that send an ordinary reply ('Looks good to me') route the same way they
+  // would against the real implementation.
+  looksLikeVerificationCode.mockImplementation((body: string) =>
+    /^[0-9A-HJ-NP-Z]{4}$/.test(body.trim().toUpperCase())
+  );
+  redeemPhoneVerification.mockResolvedValue({ status: 'no-match' });
+  createInboundSms.mockResolvedValue({});
+  updateInboundSms.mockResolvedValue({});
+  addComment.mockResolvedValue({ commentId: 'comment_1' });
+});
+
+describe('signature', () => {
+  it('rejects an unsigned request before doing anything else', async () => {
+    verifyTwilioSignature.mockReturnValue(false);
+
+    expect((await POST(post(inboundReply))).status).toBe(403);
+    expect(redeemPhoneVerification).not.toHaveBeenCalled();
+    expect(addComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('registration', () => {
+  it('treats a matching code as a registration, not a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'verified', userId: 'user_1' });
+
+    const response = await POST(post({ ...inboundReply, Body: 'AB12' }));
+
+    expect(response.status).toBe(200);
+    expect(addComment).not.toHaveBeenCalled();
+    expect(redeemPhoneVerification).toHaveBeenCalledWith({
+      code: 'AB12',
+      phone: '+15551234567',
+    });
+  });
+
+  it('confirms registration to the sender', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'verified', userId: 'user_1' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body).toContain('<Response>');
+    expect(body.toLowerCase()).toContain('registered');
+  });
+
+  it('tells the sender a code has expired rather than posting it as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'expired' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('expired');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('tells the sender a number is already registered elsewhere rather than posting it as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'phone-in-use' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('already registered');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('tells a throttled sender to wait rather than posting their guess as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'too-many-attempts' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('too many attempts');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('tells a sender who re-texts their already-redeemed code that they are registered, rather than posting the code as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'already-registered' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('registered');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('the code-shape gate on verification redemption', () => {
+  const verifiedSender = { id: 'user_1', name: 'Bob', email: 'bob@example.com' };
+
+  const lastThread = {
+    comment: {
+      thread: {
+        id: 'thread_1',
+        rootAnnotationId: 'anno_1',
+        document: { documentEngineId: 'doc_engine_1' },
+      },
+    },
+  };
+
+  beforeEach(() => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+    findFirstMention.mockResolvedValue(lastThread);
+  });
+
+  it('never calls redeemPhoneVerification for an ordinary multi-word reply, and still posts it as a comment', async () => {
+    const response = await POST(post(inboundReply));
+
+    expect(response.status).toBe(200);
+    expect(redeemPhoneVerification).not.toHaveBeenCalled();
+    expect(addComment).toHaveBeenCalledWith(expect.objectContaining({ text: 'Looks good to me' }));
+  });
+
+  it('does not let the verification throttle silently swallow a verified sender in an active thread', async () => {
+    // Regression guard for the bug where every non-keyword message — not just
+    // registration attempts — was charged against the per-sender verification
+    // throttle. Six ordinary replies in a row must all become comments; none
+    // of them should ever reach `redeemPhoneVerification`, so there is nothing
+    // for a throttle to engage on.
+    for (let i = 0; i < 6; i += 1) {
+      const response = await POST(
+        post({ ...inboundReply, Body: 'Looks good to me', MessageSid: `SM${i}` })
+      );
+      expect(response.status).toBe(200);
+    }
+
+    expect(redeemPhoneVerification).not.toHaveBeenCalled();
+    expect(addComment).toHaveBeenCalledTimes(6);
+  });
+
+  it('still sends a body that looks like a code through redemption', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'verified', userId: 'user_1' });
+
+    await POST(post({ ...inboundReply, Body: 'AB12' }));
+
+    expect(redeemPhoneVerification).toHaveBeenCalledWith({
+      code: 'AB12',
+      phone: '+15551234567',
+    });
+  });
+});
+
+describe('replies', () => {
+  const verifiedSender = { id: 'user_1', name: 'Bob', email: 'bob@example.com' };
+
+  const lastThread = {
+    comment: {
+      thread: {
+        id: 'thread_1',
+        rootAnnotationId: 'anno_1',
+        document: { documentEngineId: 'doc_engine_1' },
+      },
+    },
+  };
+
+  it('posts the reply into the most recent thread the sender was notified about', async () => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+    findFirstMention.mockResolvedValue(lastThread);
+
+    expect((await POST(post(inboundReply))).status).toBe(200);
+    expect(addComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId: 'doc_engine_1',
+        rootAnnotationId: 'anno_1',
+        authorUserId: 'user_1',
+        text: 'Looks good to me',
+      })
+    );
+  });
+
+  it('orders by most recent notification, which is what last-thread-wins means', async () => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+    findFirstMention.mockResolvedValue(lastThread);
+
+    await POST(post(inboundReply));
+
+    expect(findFirstMention).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { notifiedAt: 'desc' } })
+    );
+  });
+
+  it('ignores a message from a number nobody has verified', async () => {
+    findFirstUser.mockResolvedValue(null);
+
+    expect((await POST(post(inboundReply))).status).toBe(200);
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('tells a sender with no thread to reply to, rather than failing silently', async () => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+    findFirstMention.mockResolvedValue(null);
+
+    const body = await (await POST(post(inboundReply))).text();
+
+    expect(addComment).not.toHaveBeenCalled();
+    expect(body.toLowerCase()).toContain('no recent');
+  });
+
+  it('claims the message sid before writing, so a retry cannot double-post', async () => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+    findFirstMention.mockResolvedValue(lastThread);
+    createInboundSms.mockRejectedValue(new Error('unique constraint'));
+
+    expect((await POST(post(inboundReply))).status).toBe(200);
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('releases the claim when the write fails, so the retry is not swallowed', async () => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+    findFirstMention.mockResolvedValue(lastThread);
+    addComment.mockRejectedValue(new Error('DWS is down'));
+    deleteInboundSms.mockResolvedValue({});
+
+    expect((await POST(post(inboundReply))).status).toBe(500);
+    expect(deleteInboundSms).toHaveBeenCalledWith({
+      where: { providerMessageId: 'SM123' },
+    });
+  });
+
+  it('ignores an empty body rather than posting a blank comment', async () => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+
+    expect((await POST(post({ ...inboundReply, Body: '   ' }))).status).toBe(200);
+    expect(addComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('carrier keywords', () => {
+  beforeEach(() => {
+    updateManyUsers.mockResolvedValue({ count: 1 });
+  });
+
+  it('records an opt-out so we stop queuing sends, not just stop delivering them', async () => {
+    await POST(post({ ...inboundReply, Body: 'STOP' }));
+
+    expect(updateManyUsers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { phone: '+15551234567' },
+        data: expect.objectContaining({ smsOptedOutAt: expect.any(Date) }),
+      })
+    );
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('honours STOP even when the body would otherwise be a verification code', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'verified', userId: 'user_1' });
+
+    await POST(post({ ...inboundReply, Body: 'STOP' }));
+
+    expect(redeemPhoneVerification).not.toHaveBeenCalled();
+    expect(updateManyUsers).toHaveBeenCalled();
+  });
+
+  it('clears the opt-out on START', async () => {
+    await POST(post({ ...inboundReply, Body: 'START' }));
+
+    expect(updateManyUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { smsOptedOutAt: null } })
+    );
+  });
+
+  it('answers HELP with what this service is and how to leave', async () => {
+    const body = await (await POST(post({ ...inboundReply, Body: 'HELP' }))).text();
+
+    expect(body).toContain('STOP');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('stays silent on STOP, since a confirmation to someone who left is itself a message', async () => {
+    const body = await (await POST(post({ ...inboundReply, Body: 'STOP' }))).text();
+
+    expect(body).not.toContain('<Message>');
+  });
+});
