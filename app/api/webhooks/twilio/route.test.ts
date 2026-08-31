@@ -11,6 +11,7 @@ const findFirstMention = vi.fn();
 const createInboundSms = vi.fn();
 const deleteInboundSms = vi.fn();
 const updateInboundSms = vi.fn();
+const updateManyUsers = vi.fn();
 
 vi.mock('@/lib/twilio', () => ({
   verifyTwilioSignature: (...a: unknown[]) => verifyTwilioSignature(...a),
@@ -22,7 +23,10 @@ vi.mock('@/lib/phone-verification', () => ({
 vi.mock('@/lib/dws-comments', () => ({ addComment: (...a: unknown[]) => addComment(...a) }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    user: { findFirst: (...a: unknown[]) => findFirstUser(...a) },
+    user: {
+      findFirst: (...a: unknown[]) => findFirstUser(...a),
+      updateMany: (...a: unknown[]) => updateManyUsers(...a),
+    },
     commentMention: { findFirst: (...a: unknown[]) => findFirstMention(...a) },
     inboundSms: {
       create: (...a: unknown[]) => createInboundSms(...a),
@@ -200,5 +204,53 @@ describe('replies', () => {
 
     expect((await POST(post({ ...inboundReply, Body: '   ' }))).status).toBe(200);
     expect(addComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('carrier keywords', () => {
+  beforeEach(() => {
+    updateManyUsers.mockResolvedValue({ count: 1 });
+  });
+
+  it('records an opt-out so we stop queuing sends, not just stop delivering them', async () => {
+    await POST(post({ ...inboundReply, Body: 'STOP' }));
+
+    expect(updateManyUsers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { phone: '+15551234567' },
+        data: expect.objectContaining({ smsOptedOutAt: expect.any(Date) }),
+      })
+    );
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('honours STOP even when the body would otherwise be a verification code', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'verified', userId: 'user_1' });
+
+    await POST(post({ ...inboundReply, Body: 'STOP' }));
+
+    expect(redeemPhoneVerification).not.toHaveBeenCalled();
+    expect(updateManyUsers).toHaveBeenCalled();
+  });
+
+  it('clears the opt-out on START', async () => {
+    await POST(post({ ...inboundReply, Body: 'START' }));
+
+    expect(updateManyUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { smsOptedOutAt: null } })
+    );
+  });
+
+  it('answers HELP with what this service is and how to leave', async () => {
+    const body = await (await POST(post({ ...inboundReply, Body: 'HELP' }))).text();
+
+    expect(body).toContain('STOP');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('stays silent on STOP, since a confirmation to someone who left is itself a message', async () => {
+    const body = await (await POST(post({ ...inboundReply, Body: 'STOP' }))).text();
+
+    expect(body).not.toContain('<Message>');
   });
 });

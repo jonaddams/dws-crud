@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { addComment } from '@/lib/dws-comments';
 import { redeemPhoneVerification } from '@/lib/phone-verification';
 import { prisma } from '@/lib/prisma';
+import { classifyKeyword } from '@/lib/sms-keywords';
 import { verifyTwilioSignature } from '@/lib/twilio';
 
 /**
@@ -92,8 +93,35 @@ export async function POST(request: Request) {
 
   if (!from || !body || !providerMessageId) return twiml();
 
-  // Task 8 inserts STOP/HELP/START keyword handling here, before the
-  // verification-code check below.
+  // Before anything else. Somebody texting STOP must be honoured even if the body
+  // would otherwise parse as a verification code.
+  //
+  // Twilio's Advanced Opt-Out could answer these without us, but then
+  // `smsOptedOutAt` would never be set: we would keep queuing sends that Twilio
+  // silently drops, and the preference screen would show a state that is not
+  // true. Handling it here keeps our data honest about what the user asked for.
+  const keyword = classifyKeyword(body);
+
+  if (keyword === 'stop') {
+    await prisma.user.updateMany({ where: { phone: from }, data: { smsOptedOutAt: new Date() } });
+
+    // Deliberately silent. Twilio sends the carrier-mandated confirmation itself,
+    // and a message of our own to somebody who just left is exactly what they
+    // asked us to stop doing.
+    return twiml();
+  }
+
+  if (keyword === 'start') {
+    await prisma.user.updateMany({ where: { phone: from }, data: { smsOptedOutAt: null } });
+
+    return twiml("You're opted back in. Reply STOP to opt out.");
+  }
+
+  if (keyword === 'help') {
+    return twiml(
+      'Mention notifications for your documents. Reply to a notification to comment. Reply STOP to opt out.'
+    );
+  }
 
   // Registration first — see the ordering note above. This is an exhaustive
   // switch, not a chain of ifs, on purpose: a chain of ifs is exactly how the
