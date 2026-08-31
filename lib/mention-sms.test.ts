@@ -26,14 +26,25 @@ describe('buildMentionSms', () => {
     expect(buildMentionSms(options)).toContain('STOP');
   });
 
-  it('fits a single segment for a typical document title', () => {
-    expect(buildMentionSms(options).length).toBeLessThanOrEqual(160);
-  });
+  it('keeps the full title and the intact link even at production-realistic length, accepting concatenated SMS instead of truncating', () => {
+    // A real NEXT_PUBLIC_APP_URL on a vercel.app host plus a long author name
+    // pushes fixed overhead well past 160 chars on its own. Truncating the
+    // title used to "fix" this by inserting U+2026, which is outside the GSM
+    // 03.38 alphabet and forces the whole message into UCS-2 (70-char
+    // segments) — costing more segments than the untruncated GSM original.
+    // The message must carry the full title and URL regardless.
+    const longTitle =
+      'Amended and Restated Master Services Agreement Between Acme Corporation and Example Industries LLC';
+    const productionUrl = 'https://dws-crud.vercel.app/documents/clx1a2b3c4d5e6f7g8h9i0j1k';
+    const longAuthorName = 'Alexandria Montgomery-Fitzgerald';
 
-  it('truncates a long document title rather than spilling into extra segments', () => {
-    const message = buildMentionSms({ ...options, documentTitle: 'A'.repeat(200) });
+    const message = buildMentionSms({
+      authorName: longAuthorName,
+      documentTitle: longTitle,
+      documentUrl: productionUrl,
+    });
 
-    expect(message.length).toBeLessThanOrEqual(160);
-    expect(message).toContain('…');
+    expect(message).toContain(longTitle);
+    expect(message).toContain(productionUrl);
   });
 });

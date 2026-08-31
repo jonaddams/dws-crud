@@ -15,32 +15,24 @@
  * and asserts it is absent from the SMS body.
  */
 
-const SINGLE_SEGMENT_LIMIT = 160;
 const STOP_NOTICE = ' Reply STOP to opt out.';
 
 /**
- * A document title long enough to push the message into a second segment is
- * truncated rather than allowed to cost an extra message. The link matters more
- * than the full title: the title is context, the link is the action.
+ * The title and link are kept whole rather than truncated to fit one 160-char
+ * GSM segment. A realistic production URL and author name routinely leave no
+ * budget for the title at all, and truncating with an ellipsis (U+2026, not in
+ * the GSM 03.38 alphabet) forces the whole message into UCS-2 — 70-char
+ * segments instead of 160 — which costs *more* segments than sending the full
+ * title untruncated. Concatenated (multi-part) SMS is accepted deliberately.
+ * See the "SMS notifications" section of CLAUDE.md before reintroducing
+ * truncation.
  */
-const fitTitle = (title: string, budget: number): string =>
-  title.length <= budget ? title : `${title.slice(0, Math.max(0, budget - 1)).trimEnd()}…`;
-
 export const buildMentionSms = (options: {
   authorName: string;
   documentTitle: string;
   documentUrl: string;
 }): string => {
-  const { authorName, documentUrl } = options;
+  const { authorName, documentTitle, documentUrl } = options;
 
-  const frame = (title: string): string =>
-    `${authorName} mentioned you on "${title}". Reply to add a comment. ${documentUrl}${STOP_NOTICE}`;
-
-  const overflow = frame(options.documentTitle).length - SINGLE_SEGMENT_LIMIT;
-
-  return frame(
-    overflow <= 0
-      ? options.documentTitle
-      : fitTitle(options.documentTitle, options.documentTitle.length - overflow)
-  );
+  return `${authorName} mentioned you on "${documentTitle}". Reply to add a comment. ${documentUrl}${STOP_NOTICE}`;
 };

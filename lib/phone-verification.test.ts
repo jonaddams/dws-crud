@@ -28,6 +28,7 @@ vi.mock('@/lib/prisma', () => ({
 const {
   startPhoneVerification,
   redeemPhoneVerification,
+  looksLikeVerificationCode,
   VERIFICATION_CODE_LENGTH,
   VERIFICATION_TTL_MINUTES,
 } = await import('@/lib/phone-verification');
@@ -191,5 +192,56 @@ describe('redeemPhoneVerification', () => {
     const result = await redeemPhoneVerification({ code: 'AB12', phone: '+15551234567' });
 
     expect(result).toEqual({ status: 'phone-in-use' });
+  });
+
+  it('reports already-registered when the same sender re-texts a code they already redeemed', async () => {
+    // No live (unredeemed) row matches, but a redeemed row with this exact
+    // code and this exact phone does — the sender is verified and simply sent
+    // their code again (e.g. a slow first reply prompted a resend).
+    findFirstVerification.mockResolvedValueOnce(null);
+    findFirstVerification.mockResolvedValueOnce(
+      live({ verifiedAt: new Date(), phone: '+15551234567' })
+    );
+
+    const result = await redeemPhoneVerification({ code: 'AB12', phone: '+15551234567' });
+
+    expect(result).toEqual({ status: 'already-registered' });
+    expect(createAttempt).not.toHaveBeenCalled();
+  });
+
+  it('does not leak that a code exists when it was redeemed by a different phone', async () => {
+    // Same already-redeemed code, but the second lookup is scoped to the
+    // sender's own phone, so a stranger who guesses somebody else's already-used
+    // code must see exactly the same thing as any other wrong guess.
+    findFirstVerification.mockResolvedValueOnce(null);
+    findFirstVerification.mockResolvedValueOnce(null);
+
+    const result = await redeemPhoneVerification({ code: 'AB12', phone: '+15559990000' });
+
+    expect(result).toEqual({ status: 'no-match' });
+    expect(createAttempt).toHaveBeenCalledWith({ data: { phone: '+15559990000' } });
+  });
+});
+
+describe('looksLikeVerificationCode', () => {
+  it('matches a body shaped like a live verification code', () => {
+    expect(looksLikeVerificationCode('AB12')).toBe(true);
+  });
+
+  it('is case-insensitive and tolerates surrounding whitespace, like redemption itself', () => {
+    expect(looksLikeVerificationCode('  ab12  ')).toBe(true);
+  });
+
+  it('rejects an ordinary multi-word reply', () => {
+    expect(looksLikeVerificationCode('Looks good to me')).toBe(false);
+  });
+
+  it('rejects a body of the wrong length', () => {
+    expect(looksLikeVerificationCode('AB1')).toBe(false);
+    expect(looksLikeVerificationCode('AB123')).toBe(false);
+  });
+
+  it('rejects characters outside the code alphabet, including the excluded O and I', () => {
+    expect(looksLikeVerificationCode('AO1I')).toBe(false);
   });
 });

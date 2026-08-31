@@ -39,6 +39,17 @@ const generateCode = (): string =>
     () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
   ).join('');
 
+// Built from the same alphabet and length constants `generateCode` uses, so a
+// future change to either cannot silently desynchronise the two. This is a
+// shape check only — it says a body *could* be a code, not that it is live or
+// correct — and it exists so callers (the inbound SMS webhook) can decide
+// whether a message is even worth sending to `redeemPhoneVerification` at all.
+// An ordinary reply should never reach redemption, let alone its throttle.
+const CODE_SHAPE_PATTERN = new RegExp(`^[${CODE_ALPHABET}]{${VERIFICATION_CODE_LENGTH}}$`);
+
+export const looksLikeVerificationCode = (body: string): boolean =>
+  CODE_SHAPE_PATTERN.test(body.trim().toUpperCase());
+
 export const startPhoneVerification = async (options: {
   userId: string;
 }): Promise<{ code: string; expiresAt: Date }> => {
@@ -58,7 +69,9 @@ export const startPhoneVerification = async (options: {
 
 export type RedeemResult =
   | { status: 'verified'; userId: string }
-  | { status: 'no-match' | 'expired' | 'too-many-attempts' | 'phone-in-use' };
+  | {
+      status: 'no-match' | 'expired' | 'too-many-attempts' | 'phone-in-use' | 'already-registered';
+    };
 
 const isUniqueConstraintViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
@@ -95,6 +108,28 @@ export const redeemPhoneVerification = async (options: {
   // verification row, since none was found and no other user's live
   // verification should be touched by somebody else's wrong guess.
   if (!verification) {
+    // Except for one case: the sender re-texting a code they already redeemed
+    // themselves (a slow first reply prompting a resend, most likely). By the
+    // time that happens `verifiedAt` is set, so the query above no longer
+    // matches it and it would otherwise fall through to the reply path,
+    // posting the verification code itself as a comment on a document thread.
+    //
+    // The check is scoped to code AND phone together, not code alone: matching
+    // on the code by itself would tell a stranger who merely guessed someone
+    // else's already-used code that the code exists, which is exactly the
+    // information the "say nothing more specific" rule above exists to
+    // withhold. Scoping to this sender's own phone means a wrong guess of an
+    // already-redeemed code is indistinguishable from a wrong guess of any
+    // other code — both fall through to the ordinary no-match branch below,
+    // attempt counted the same way.
+    const alreadyRedeemedBySender = await prisma.phoneVerification.findFirst({
+      where: { code, verifiedAt: { not: null }, phone: options.phone },
+    });
+
+    if (alreadyRedeemedBySender) {
+      return { status: 'already-registered' };
+    }
+
     await prisma.phoneVerificationAttempt.create({ data: { phone: options.phone } });
     return { status: 'no-match' };
   }

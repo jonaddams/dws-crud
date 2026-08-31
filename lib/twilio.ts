@@ -58,9 +58,12 @@ export const sendSms = async (options: { to: string; body: string }): Promise<{ 
  *
  * Note what is missing: Twilio puts no timestamp in the signature, so there is no
  * replay window to check the way the Resend verifier does. A captured request
- * stays valid forever. What bounds replay here is the unique constraint on
- * `InboundSms.providerMessageId` — a replayed message finds its own row and stops.
- * That guard is load-bearing, not an optimisation.
+ * stays valid forever. The unique constraint on `InboundSms.providerMessageId`
+ * bounds replay of the **reply path only** — the row is claimed after the
+ * keyword (STOP/START/HELP) and registration branches have already returned.
+ * A captured, signed HELP (or STOP/START) request can be replayed indefinitely;
+ * each one still costs an outbound SMS or a database write. That guard is
+ * load-bearing for replies, not a blanket replay defence for the endpoint.
  */
 export const verifyTwilioSignature = (options: {
   /** The full public URL Twilio posted to, including any query string. */

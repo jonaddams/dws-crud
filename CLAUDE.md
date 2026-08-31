@@ -1442,8 +1442,12 @@ database.
   not a parameter on it.
 - **A Twilio signature carries no timestamp,** so unlike the Resend verifier there
   is no replay window to check. The unique constraint on
-  `InboundSms.providerMessageId` is what bounds replay. It is load-bearing, not
-  an optimisation.
+  `InboundSms.providerMessageId` bounds replay of the **reply path only** — the
+  claim happens after the keyword (STOP/START/HELP) and registration branches
+  have already returned. A captured, signed HELP request (or STOP/START) can be
+  replayed indefinitely; each replay still costs a real side effect (an
+  outbound SMS, a database write). Do not describe this constraint as bounding
+  replay of the whole webhook.
 - **`TWILIO_AUTH_TOKEN` is also the webhook signing key.** Rotating it silently
   breaks inbound verification.
 - **Behind a proxy, Twilio signs the URL it was configured with,** which may not
@@ -1479,15 +1483,21 @@ database.
   the inbound webhook is the boundary where a raw carrier-supplied number
   first enters the system, and today it relies on Twilio's E.164 guarantee
   rather than doing its own normalisation.
-- **The single-segment (160 char) SMS budget is tighter than it looks, and
-  unsolved.** Fixed overhead is author name + document URL + framing text; with
-  a real `NEXT_PUBLIC_APP_URL` (roughly a 68-char URL on a `vercel.app` host,
-  versus ~35 in the test fixture) the document title has roughly ten characters
-  of budget left before truncation, and a long author name or host can push
-  the fixed overhead alone past 160 — at which point the truncation logic still
-  runs but the guarantee is broken. This is a known limit with a decision
-  pending (most likely reconsidering the 160-char target rather than patching
-  the arithmetic), not something to treat as solved.
+- **`buildMentionSms` deliberately does not fit a single 160-char segment.**
+  It used to truncate the title to fit one GSM segment, and that truncation was
+  removed on purpose — do not reintroduce it. Two things made it
+  counterproductive rather than merely imperfect: with a real
+  `NEXT_PUBLIC_APP_URL` (roughly 68 chars on a `vercel.app` host, versus ~35 in
+  the old test fixture) and a normal author name, the fixed overhead alone
+  regularly left less than 160 chars of budget, so truncation ran on *every*
+  realistic message, not as a rare edge case. Worse, the truncation used `…`
+  (U+2026, not in the GSM 03.38 alphabet), which forces the whole message into
+  UCS-2 — a **70**-char segment instead of 160. So "truncating to fit one
+  segment" produced *three* UCS-2 segments where the untruncated GSM original
+  would have been two: truncating cost more than it saved, always. The message
+  now keeps the full title and full URL and accepts concatenated (multi-part)
+  SMS. If someone proposes truncation again, they must not use `…` or any other
+  non-GSM character to do it.
 - **`prisma migrate dev` can offer to reset the database on drift.** Use
   `prisma migrate dev --create-only` to generate the SQL, review it, then apply
   with `prisma migrate deploy`. `--create-only` can still block on an

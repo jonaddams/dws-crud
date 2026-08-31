@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { addComment } from '@/lib/dws-comments';
-import { redeemPhoneVerification } from '@/lib/phone-verification';
+import {
+  looksLikeVerificationCode,
+  type RedeemResult,
+  redeemPhoneVerification,
+} from '@/lib/phone-verification';
 import { prisma } from '@/lib/prisma';
 import { classifyKeyword } from '@/lib/sms-keywords';
 import { verifyTwilioSignature } from '@/lib/twilio';
@@ -128,9 +132,22 @@ export async function POST(request: Request) {
   // `expired` variant went unhandled and silently fell through to the reply
   // path, posting the literal verification code as a comment. The `default`
   // branch below only compiles because every named status is handled above
-  // it — add a fifth `RedeemResult` variant and this file fails to build
+  // it — add a sixth `RedeemResult` variant and this file fails to build
   // until it is given a branch too.
-  const redeemed = await redeemPhoneVerification({ code: body, phone: from });
+  //
+  // `redeemPhoneVerification` is only called when the body has the *shape* of
+  // a code (see `looksLikeVerificationCode`). This is not an optimisation: the
+  // function writes a `PhoneVerificationAttempt` row for every `no-match`, and
+  // the per-sender throttle counts those rows. Calling it for every ordinary
+  // reply meant an active conversation — six replies inside ten minutes —
+  // tripped the same throttle a guesser would, silently discarding the sixth
+  // reply with no comment, no retry, and no record. Gating on shape preserves
+  // the brute-force property (a guess must look like a code to be tried, and
+  // every guess that looks like one is still throttled) while keeping ordinary
+  // replies out of the verification system entirely.
+  const redeemed: RedeemResult = looksLikeVerificationCode(body)
+    ? await redeemPhoneVerification({ code: body, phone: from })
+    : { status: 'no-match' };
 
   switch (redeemed.status) {
     case 'verified':
@@ -141,6 +158,12 @@ export async function POST(request: Request) {
       return twiml('Too many attempts. Please wait and request a new code.');
     case 'expired':
       return twiml('That code has expired. Please request a new one.');
+    case 'already-registered':
+      // A second delivery of a code the sender already redeemed — most likely
+      // a resend after a slow first reply. Reassure rather than silently
+      // falling through to the reply path, which would otherwise post the
+      // verification code itself as a comment on a document thread.
+      return twiml("You're already registered. You'll get a text when someone mentions you.");
     case 'no-match':
       // This text was never a verification code attempt — fall through and
       // treat it as a reply. This is the only status that means that.

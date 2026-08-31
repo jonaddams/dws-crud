@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const verifyTwilioSignature = vi.fn();
 const redeemPhoneVerification = vi.fn();
+const looksLikeVerificationCode = vi.fn();
 const addComment = vi.fn();
 const sendSms = vi.fn();
 const findFirstUser = vi.fn();
@@ -19,6 +20,7 @@ vi.mock('@/lib/twilio', () => ({
 }));
 vi.mock('@/lib/phone-verification', () => ({
   redeemPhoneVerification: (...a: unknown[]) => redeemPhoneVerification(...a),
+  looksLikeVerificationCode: (...a: unknown[]) => looksLikeVerificationCode(...a),
 }));
 vi.mock('@/lib/dws-comments', () => ({ addComment: (...a: unknown[]) => addComment(...a) }));
 vi.mock('@/lib/prisma', () => ({
@@ -55,6 +57,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('TWILIO_AUTH_TOKEN', 'token');
   verifyTwilioSignature.mockReturnValue(true);
+  // Mirrors the real `looksLikeVerificationCode` shape check (4 chars from the
+  // code alphabet), so tests that send a code-shaped body ('AB12') and tests
+  // that send an ordinary reply ('Looks good to me') route the same way they
+  // would against the real implementation.
+  looksLikeVerificationCode.mockImplementation((body: string) =>
+    /^[0-9A-HJ-NP-Z]{4}$/.test(body.trim().toUpperCase())
+  );
   redeemPhoneVerification.mockResolvedValue({ status: 'no-match' });
   createInboundSms.mockResolvedValue({});
   updateInboundSms.mockResolvedValue({});
@@ -119,6 +128,70 @@ describe('registration', () => {
 
     expect(body.toLowerCase()).toContain('too many attempts');
     expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('tells a sender who re-texts their already-redeemed code that they are registered, rather than posting the code as a reply', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'already-registered' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body.toLowerCase()).toContain('registered');
+    expect(addComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('the code-shape gate on verification redemption', () => {
+  const verifiedSender = { id: 'user_1', name: 'Bob', email: 'bob@example.com' };
+
+  const lastThread = {
+    comment: {
+      thread: {
+        id: 'thread_1',
+        rootAnnotationId: 'anno_1',
+        document: { documentEngineId: 'doc_engine_1' },
+      },
+    },
+  };
+
+  beforeEach(() => {
+    findFirstUser.mockResolvedValue(verifiedSender);
+    findFirstMention.mockResolvedValue(lastThread);
+  });
+
+  it('never calls redeemPhoneVerification for an ordinary multi-word reply, and still posts it as a comment', async () => {
+    const response = await POST(post(inboundReply));
+
+    expect(response.status).toBe(200);
+    expect(redeemPhoneVerification).not.toHaveBeenCalled();
+    expect(addComment).toHaveBeenCalledWith(expect.objectContaining({ text: 'Looks good to me' }));
+  });
+
+  it('does not let the verification throttle silently swallow a verified sender in an active thread', async () => {
+    // Regression guard for the bug where every non-keyword message — not just
+    // registration attempts — was charged against the per-sender verification
+    // throttle. Six ordinary replies in a row must all become comments; none
+    // of them should ever reach `redeemPhoneVerification`, so there is nothing
+    // for a throttle to engage on.
+    for (let i = 0; i < 6; i += 1) {
+      const response = await POST(
+        post({ ...inboundReply, Body: 'Looks good to me', MessageSid: `SM${i}` })
+      );
+      expect(response.status).toBe(200);
+    }
+
+    expect(redeemPhoneVerification).not.toHaveBeenCalled();
+    expect(addComment).toHaveBeenCalledTimes(6);
+  });
+
+  it('still sends a body that looks like a code through redemption', async () => {
+    redeemPhoneVerification.mockResolvedValue({ status: 'verified', userId: 'user_1' });
+
+    await POST(post({ ...inboundReply, Body: 'AB12' }));
+
+    expect(redeemPhoneVerification).toHaveBeenCalledWith({
+      code: 'AB12',
+      phone: '+15551234567',
+    });
   });
 });
 
