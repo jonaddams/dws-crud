@@ -5,6 +5,7 @@ import type { PendingNotification } from '@/lib/comment-sync';
 
 const reconcileDocument = vi.fn();
 const sendEmail = vi.fn();
+const sendSms = vi.fn();
 const findUniqueUser = vi.fn();
 const findUniqueReplyToken = vi.fn();
 const createReplyTokenRow = vi.fn();
@@ -15,6 +16,7 @@ vi.mock('@/lib/comment-sync', () => ({
   reconcileDocument: (...args: unknown[]) => reconcileDocument(...args),
 }));
 vi.mock('@/lib/resend', () => ({ sendEmail: (...args: unknown[]) => sendEmail(...args) }));
+vi.mock('@/lib/twilio', () => ({ sendSms: (...args: unknown[]) => sendSms(...args) }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     user: { findUnique: (...a: unknown[]) => findUniqueUser(...a) },
@@ -47,6 +49,7 @@ beforeEach(() => {
 
   reconcileDocument.mockReset().mockResolvedValue([]);
   sendEmail.mockReset().mockResolvedValue({ id: 'msg_1' });
+  sendSms.mockReset().mockResolvedValue({ sid: 'sms_1' });
   findUniqueUser.mockReset().mockResolvedValue({ email: 'bob@nutrient.io', name: 'Bob Example' });
   findUniqueReplyToken.mockReset().mockResolvedValue({ token: 'existingtoken234567' });
   createReplyTokenRow.mockReset().mockResolvedValue({ token: 'freshtoken234567abc' });
@@ -202,5 +205,92 @@ describe('Notifying people who were mentioned', () => {
     const result = await notifyPendingMentions({ documentId: 'doc_1' });
 
     expect(result).toEqual({ sent: 0, failed: 0, failures: [] });
+  });
+});
+
+describe('channel selection', () => {
+  const smsUser = {
+    email: 'bob@example.com',
+    name: 'Bob',
+    phone: '+15551234567',
+    phoneVerifiedAt: new Date(),
+    smsOptedOutAt: null,
+    notificationChannel: 'SMS',
+  };
+
+  it('sends only email when the user has made no choice', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    findUniqueUser.mockResolvedValue({ ...smsUser, notificationChannel: 'EMAIL' });
+
+    const result = await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(result.sent).toBe(1);
+  });
+
+  it('sends only SMS when the user chose SMS', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    findUniqueUser.mockResolvedValue(smsUser);
+
+    await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendSms).toHaveBeenCalledWith(expect.objectContaining({ to: '+15551234567' }));
+  });
+
+  it('never puts the comment text in the SMS', async () => {
+    reconcileDocument.mockResolvedValue([
+      mention({ commentText: 'the secret merger price is 4.2bn' }),
+    ]);
+    findUniqueUser.mockResolvedValue(smsUser);
+
+    await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(sendSms.mock.calls[0][0].body).not.toContain('4.2bn');
+  });
+
+  it('sends both when the user chose both', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    findUniqueUser.mockResolvedValue({ ...smsUser, notificationChannel: 'BOTH' });
+
+    await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendSms).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to email when SMS is chosen but the number is unverified', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    findUniqueUser.mockResolvedValue({ ...smsUser, phoneVerifiedAt: null });
+
+    const result = await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(result.sent).toBe(1);
+  });
+
+  it('falls back to email for someone who has texted STOP', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    findUniqueUser.mockResolvedValue({ ...smsUser, smsOptedOutAt: new Date() });
+
+    await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the mention notified when SMS fails but email succeeded', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    findUniqueUser.mockResolvedValue({ ...smsUser, notificationChannel: 'BOTH' });
+    sendSms.mockRejectedValue(new Error('unverified number'));
+
+    const result = await notifyPendingMentions({ documentId: 'doc_1' });
+
+    // Marked notified: retrying would re-send the email that did arrive.
+    expect(updateMention).toHaveBeenCalled();
+    expect(result.sent).toBe(1);
+    expect(result.failures[0]).toEqual(expect.objectContaining({ code: 'delivery-failed' }));
   });
 });

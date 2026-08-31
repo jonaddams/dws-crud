@@ -1,8 +1,11 @@
+import type { NotificationChannel } from '@prisma/client';
 import { type PendingNotification, reconcileDocument } from '@/lib/comment-sync';
 import { buildMentionEmail } from '@/lib/mention-email';
+import { buildMentionSms } from '@/lib/mention-sms';
 import { prisma } from '@/lib/prisma';
 import { createReplyToken, formatReplyAddress } from '@/lib/reply-token';
 import { sendEmail } from '@/lib/resend';
+import { sendSms } from '@/lib/twilio';
 
 /**
  * Reconcile a document, then tell anyone newly mentioned.
@@ -47,7 +50,7 @@ const replyAddressFor = async (options: { threadId: string; userId: string }): P
  * `delivery-failed` is anything that went wrong on the way out and is retried on
  * the next pass.
  */
-export type NotifyFailureCode = 'no-account' | 'delivery-failed';
+export type NotifyFailureCode = 'no-account' | 'delivery-failed' | 'no-sms-destination';
 
 export type NotifyFailure = {
   mentionId: string;
@@ -81,6 +84,33 @@ const reasonFrom = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
+ * Which channels a notification should actually go out on.
+ *
+ * A preference is a request, not a guarantee. SMS needs a verified number and no
+ * standing opt-out, and when it is unavailable the notification falls back to
+ * email rather than vanishing — a preference should never be the reason somebody
+ * hears nothing at all.
+ */
+type Deliverable = { email: boolean; sms: boolean };
+
+const channelsFor = (recipient: {
+  phone: string | null;
+  phoneVerifiedAt: Date | null;
+  smsOptedOutAt: Date | null;
+  notificationChannel: NotificationChannel;
+}): Deliverable => {
+  const smsAvailable = Boolean(
+    recipient.phone && recipient.phoneVerifiedAt && !recipient.smsOptedOutAt
+  );
+
+  if (recipient.notificationChannel === 'EMAIL') return { email: true, sms: false };
+
+  if (!smsAvailable) return { email: true, sms: false };
+
+  return { email: recipient.notificationChannel === 'BOTH', sms: true };
+};
+
+/**
  * One delivery failure does not stop the others: each mention is marked notified
  * only once its own email has been accepted, so a failed one is retried on the
  * next pass rather than silently lost.
@@ -106,7 +136,14 @@ export const notifyPendingMentions = async (options: {
     try {
       const recipient = await prisma.user.findUnique({
         where: { id: mention.mentionedUserId },
-        select: { email: true, name: true },
+        select: {
+          email: true,
+          name: true,
+          phone: true,
+          phoneVerifiedAt: true,
+          smsOptedOutAt: true,
+          notificationChannel: true,
+        },
       });
 
       if (!recipient) {
@@ -137,22 +174,52 @@ export const notifyPendingMentions = async (options: {
         userId: mention.mentionedUserId,
       });
 
-      const email = buildMentionEmail({
-        recipientName: recipient.name ?? recipient.email,
-        authorName: mention.authorName,
-        documentTitle: mention.documentTitle,
-        documentUrl: `${appUrl()}/documents/${mention.documentId}`,
-        commentText: mention.commentText,
-        replyAddress,
-      });
+      const channels = channelsFor(recipient);
 
-      await sendEmail({
-        to: recipient.email,
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-        replyTo: email.replyTo,
-      });
+      let delivered = false;
+
+      if (channels.email) {
+        const email = buildMentionEmail({
+          recipientName: recipient.name ?? recipient.email,
+          authorName: mention.authorName,
+          documentTitle: mention.documentTitle,
+          documentUrl: `${appUrl()}/documents/${mention.documentId}`,
+          commentText: mention.commentText,
+          replyAddress,
+        });
+
+        await sendEmail({
+          to: recipient.email,
+          subject: email.subject,
+          text: email.text,
+          html: email.html,
+          replyTo: email.replyTo,
+        });
+
+        delivered = true;
+      }
+
+      if (channels.sms && recipient.phone) {
+        try {
+          await sendSms({
+            to: recipient.phone,
+            body: buildMentionSms({
+              authorName: mention.authorName,
+              documentTitle: mention.documentTitle,
+              documentUrl: `${appUrl()}/documents/${mention.documentId}`,
+            }),
+          });
+
+          delivered = true;
+        } catch (error) {
+          // Recorded, but not rethrown when the email already went out. Retrying
+          // the mention would re-send an email that did arrive, so a failed
+          // second channel must not undo a delivered first one.
+          record(mention, 'delivery-failed', reasonFrom(error));
+
+          if (!delivered) throw error;
+        }
+      }
 
       await prisma.commentMention.update({
         where: { id: mention.mentionId },
