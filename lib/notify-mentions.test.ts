@@ -291,6 +291,26 @@ describe('channel selection', () => {
     // Marked notified: retrying would re-send the email that did arrive.
     expect(updateMention).toHaveBeenCalled();
     expect(result.sent).toBe(1);
+    // Exactly one failure entry for this mention — not double-recorded by
+    // both the inner SMS catch and the outer per-mention catch.
+    expect(result.failures).toHaveLength(1);
     expect(result.failures[0]).toEqual(expect.objectContaining({ code: 'delivery-failed' }));
+  });
+
+  it('records exactly one failure and leaves the mention unnotified when SMS-only delivery fails', async () => {
+    reconcileDocument.mockResolvedValue([mention()]);
+    findUniqueUser.mockResolvedValue(smsUser);
+    sendSms.mockRejectedValue(new Error('unverified number'));
+
+    const result = await notifyPendingMentions({ documentId: 'doc_1' });
+
+    expect(sendEmail).not.toHaveBeenCalled();
+    // A single real failure must produce a single failure entry, not one from
+    // the inner SMS catch and a second from the outer per-mention catch.
+    expect(result.failures).toHaveLength(1);
+    expect(result.failed).toBe(1);
+    expect(result.sent).toBe(0);
+    // Left unmarked so the next reconcile pass retries — nothing was delivered.
+    expect(updateMention).not.toHaveBeenCalled();
   });
 });

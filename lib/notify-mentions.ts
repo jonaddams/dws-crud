@@ -50,7 +50,7 @@ const replyAddressFor = async (options: { threadId: string; userId: string }): P
  * `delivery-failed` is anything that went wrong on the way out and is retried on
  * the next pass.
  */
-export type NotifyFailureCode = 'no-account' | 'delivery-failed' | 'no-sms-destination';
+export type NotifyFailureCode = 'no-account' | 'delivery-failed';
 
 export type NotifyFailure = {
   mentionId: string;
@@ -212,12 +212,16 @@ export const notifyPendingMentions = async (options: {
 
           delivered = true;
         } catch (error) {
-          // Recorded, but not rethrown when the email already went out. Retrying
-          // the mention would re-send an email that did arrive, so a failed
-          // second channel must not undo a delivered first one.
-          record(mention, 'delivery-failed', reasonFrom(error));
-
-          if (!delivered) throw error;
+          // Recorded here only when an email already went out: retrying would
+          // re-send an email that did arrive, so a failed second channel must
+          // not undo a delivered first one. When nothing was delivered yet,
+          // rethrow instead of recording — the outer per-mention catch is the
+          // single place that records this failure, so it is not counted twice.
+          if (delivered) {
+            record(mention, 'delivery-failed', reasonFrom(error));
+          } else {
+            throw error;
+          }
         }
       }
 
