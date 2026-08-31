@@ -2,12 +2,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const getSession = vi.fn();
+const requireAuth = vi.fn();
 const startPhoneVerification = vi.fn();
 const findUniqueUser = vi.fn();
 const updateUser = vi.fn();
 
-vi.mock('@/lib/auth', () => ({ getSession: (...a: unknown[]) => getSession(...a) }));
+vi.mock('@/lib/auth', () => ({ requireAuth: (...a: unknown[]) => requireAuth(...a) }));
 vi.mock('@/lib/phone-verification', () => ({
   startPhoneVerification: (...a: unknown[]) => startPhoneVerification(...a),
 }));
@@ -24,12 +24,12 @@ const { POST, GET, DELETE } = await import('@/app/api/user/phone/route');
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getSession.mockResolvedValue({ user: { id: 'user_1' } });
+  requireAuth.mockResolvedValue({ user: { id: 'user_1' } });
 });
 
 describe('POST /api/user/phone', () => {
   it('refuses an unauthenticated caller', async () => {
-    getSession.mockResolvedValue(null);
+    requireAuth.mockRejectedValue(new Error('Authentication required'));
 
     expect((await POST()).status).toBe(401);
     expect(startPhoneVerification).not.toHaveBeenCalled();
@@ -51,6 +51,13 @@ describe('POST /api/user/phone', () => {
 });
 
 describe('GET /api/user/phone', () => {
+  it('refuses an unauthenticated caller', async () => {
+    requireAuth.mockRejectedValue(new Error('Authentication required'));
+
+    expect((await GET()).status).toBe(401);
+    expect(findUniqueUser).not.toHaveBeenCalled();
+  });
+
   it('reports the verified number once the text has arrived', async () => {
     findUniqueUser.mockResolvedValue({ phone: '+15551234567', phoneVerifiedAt: new Date() });
 
@@ -68,6 +75,13 @@ describe('GET /api/user/phone', () => {
 });
 
 describe('DELETE /api/user/phone', () => {
+  it('refuses an unauthenticated caller', async () => {
+    requireAuth.mockRejectedValue(new Error('Authentication required'));
+
+    expect((await DELETE()).status).toBe(401);
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
   it('forgets the number and stops SMS for that user', async () => {
     updateUser.mockResolvedValue({});
 
