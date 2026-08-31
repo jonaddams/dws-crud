@@ -1434,6 +1434,96 @@ Replaying one end-to-end needs the reply token in the event to exist in whicheve
 database the app is pointed at; tokens minted in production are not in the local
 database.
 
+## SMS notifications (Twilio)
+
+- **Twilio signs nothing like Resend does.** HMAC-SHA1 over the full URL plus
+  every POST parameter sorted by key and concatenated as `key + value`, in
+  `X-Twilio-Signature`. `lib/twilio.ts` is a sibling of `lib/webhook-signature.ts`,
+  not a parameter on it.
+- **A Twilio signature carries no timestamp,** so unlike the Resend verifier there
+  is no replay window to check. The unique constraint on
+  `InboundSms.providerMessageId` is what bounds replay. It is load-bearing, not
+  an optimisation.
+- **`TWILIO_AUTH_TOKEN` is also the webhook signing key.** Rotating it silently
+  breaks inbound verification.
+- **Behind a proxy, Twilio signs the URL it was configured with,** which may not
+  match `request.url`. `TWILIO_WEBHOOK_URL` pins it when they disagree.
+- **Threading is last-thread-wins and the credential is the sender's phone
+  number.** Weaker than the email token path on purpose — an SMS has nowhere to
+  hide a per-thread token. Read the header comment in
+  `app/api/webhooks/twilio/route.ts` before copying the pattern elsewhere.
+- **SMS never carries comment text.** A lock screen is a different privacy
+  posture from an inbox. `buildMentionSms` takes no `commentText` parameter, so
+  reintroducing one is a visible signature change rather than a quiet one.
+- **STOP/HELP are handled in our webhook rather than left to Twilio's Advanced
+  Opt-Out,** so `smsOptedOutAt` reflects reality and the notifier stops queuing
+  sends Twilio would otherwise silently drop. Keyword matching is whole-message
+  (STOP/STOPALL/UNSUBSCRIBE/CANCEL/END/QUIT to opt out; START/YES/UNSTOP to
+  opt back in; HELP/INFO for help), not substring, and it is checked before the
+  verification-code check so a STOP from an otherwise-valid sender still opts
+  them out rather than being swallowed as a reply attempt.
+- **A verification code cannot be brute-force-capped per row, because the guess
+  is unauthenticated.** The natural-looking implementation —
+  `findFirst({ where: { code, verifiedAt: null } })` — puts the guessed code
+  in the SQL `WHERE` clause, so a wrong guess matches zero rows and returns
+  before any attempt counter is touched. `PhoneVerification.attempts` only
+  bounds retries against a row that already matched; it cannot bound guessing
+  at all, because a wrong guess never identifies a row to charge. That shipped
+  in this plan's first draft and was caught in review. The fix is to throttle
+  by **sender phone number** (a separate table of failed attempts per phone
+  within the TTL window, checked before the lookup), not by row — capping the
+  row lets an attacker's failures decrement other users' attempt budgets and
+  turns the "cap" into a denial-of-service tool. This is also what
+  `TODO.md` section 19 originally asked for and the plan itself had dropped.
+  Canonicalise the phone number before using it as a lookup or throttle key —
+  the inbound webhook is the boundary where a raw carrier-supplied number
+  first enters the system, and today it relies on Twilio's E.164 guarantee
+  rather than doing its own normalisation.
+- **The single-segment (160 char) SMS budget is tighter than it looks, and
+  unsolved.** Fixed overhead is author name + document URL + framing text; with
+  a real `NEXT_PUBLIC_APP_URL` (roughly a 68-char URL on a `vercel.app` host,
+  versus ~35 in the test fixture) the document title has roughly ten characters
+  of budget left before truncation, and a long author name or host can push
+  the fixed overhead alone past 160 — at which point the truncation logic still
+  runs but the guarantee is broken. This is a known limit with a decision
+  pending (most likely reconsidering the 160-char target rather than patching
+  the arithmetic), not something to treat as solved.
+- **`prisma migrate dev` can offer to reset the database on drift.** Use
+  `prisma migrate dev --create-only` to generate the SQL, review it, then apply
+  with `prisma migrate deploy`. `--create-only` can still block on an
+  interactive confirmation prompt when the migration carries a warning (e.g.
+  adding a `@unique` constraint to an existing column) — expect to answer it,
+  don't fall back to bare `migrate dev` to dodge it.
+- **`Prisma.dmmf` does not expose `isUnique` on Prisma 7.9.1**, even for
+  known-unique fields like `User.email`. Assert a schema's uniqueness
+  constraints with a type-level guard instead: a bare `{ field: value }`
+  literal only type-checks against a model's generated `WhereUniqueInput` when
+  that field actually carries `@unique`/`@id`. That guard is enforced by
+  `pnpm typecheck`, not by `vitest run` — so `pnpm pre-commit` (which runs
+  typecheck before test) is the real gate, and a workflow that runs bare
+  `pnpm test` will not catch a dropped `@unique`.
+- **`requireAuth()` in a try/catch, mapping the message `'Authentication
+  required'` to a 401, is the house pattern** for every route under
+  `app/api/`. `lib/auth.ts` has no `auth` export — the available session
+  helpers are `getSession`, `requireAuth`, `requireAdmin`,
+  `getEffectiveDocumentFilter`, `getDocumentWriteFilter`,
+  `canPerformAdminActions`, and the `SessionUser` type. (A pre-existing, unrelated
+  bug: `app/api/user/impersonation/route.ts`'s catch blocks return a bare 500
+  instead of following this pattern, so an unauthenticated call to it answers
+  500 where every other route answers 401. Not introduced by SMS work; worth
+  its own small fix.)
+- **Trial account:** sends only to verified numbers, prepends "Sent from your
+  Twilio trial account", 100-message allowance. A round trip costs 2–3 messages.
+  Skip the Messaging Service while on trial and set the webhook directly on the
+  number: Phone Numbers → Manage → Active numbers → Messaging → "A message comes
+  in" → POST to `/api/webhooks/twilio`.
+- **A2P 10DLC registration is required before sending to ordinary US numbers.**
+  Days to weeks, with fees, and it can be rejected. The legal pages it requires
+  are live at `https://jonaddams.com/privacy`, `/terms` and `/sms`. The
+  published number in `lib/legal.ts` (in the `nutrient-sdk-samples` repo) must
+  match the number actually registered for the campaign, or the filing is
+  inconsistent with what a recipient can look up.
+
 ## Summary
 
 The key is to write clean, testable, functional code that evolves through small, safe increments. Every change should be driven by a test that describes the desired behavior, and the implementation should be the simplest thing that makes that test pass. When in doubt, favor simplicity and readability over cleverness.
