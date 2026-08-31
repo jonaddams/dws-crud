@@ -251,6 +251,22 @@ model PhoneVerification {
   @@map("phone_verifications")
 }
 
+/// A failed guess against a phone verification code, recorded by the sender's
+/// number rather than by user — the guesser is anonymous until a code
+/// matches, so the sender's number is the only handle available for a
+/// brute-force throttle. Counting these within the verification TTL window
+/// caps guesses per phone without penalising anyone else's in-flight
+/// verification, which a per-account or per-code cap cannot do once the code
+/// lookup itself is what tells a guess apart from a miss.
+model PhoneVerificationAttempt {
+  id        String   @id @default(cuid())
+  phone     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([phone])
+  @@map("phone_verification_attempts")
+}
+
 /// One inbound SMS we have accepted. Twilio retries a webhook it believes
 /// failed, so the provider's message SID is recorded and made unique: a
 /// redelivery finds the row and stops rather than posting the reply twice.

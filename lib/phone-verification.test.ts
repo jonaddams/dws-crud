@@ -1,11 +1,14 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Prisma } from '@prisma/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const upsertVerification = vi.fn();
 const findFirstVerification = vi.fn();
 const updateVerification = vi.fn();
 const updateUser = vi.fn();
+const countAttempts = vi.fn();
+const createAttempt = vi.fn();
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -14,19 +17,32 @@ vi.mock('@/lib/prisma', () => ({
       findFirst: (...a: unknown[]) => findFirstVerification(...a),
       update: (...a: unknown[]) => updateVerification(...a),
     },
+    phoneVerificationAttempt: {
+      count: (...a: unknown[]) => countAttempts(...a),
+      create: (...a: unknown[]) => createAttempt(...a),
+    },
     user: { update: (...a: unknown[]) => updateUser(...a) },
   },
 }));
 
-const { startPhoneVerification, redeemPhoneVerification, VERIFICATION_CODE_LENGTH } = await import(
-  '@/lib/phone-verification'
-);
+const {
+  startPhoneVerification,
+  redeemPhoneVerification,
+  VERIFICATION_CODE_LENGTH,
+  VERIFICATION_TTL_MINUTES,
+} = await import('@/lib/phone-verification');
 
 beforeEach(() => {
   vi.clearAllMocks();
   upsertVerification.mockResolvedValue({});
   updateVerification.mockResolvedValue({});
   updateUser.mockResolvedValue({});
+  countAttempts.mockResolvedValue(0);
+  createAttempt.mockResolvedValue({});
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('startPhoneVerification', () => {
@@ -89,6 +105,19 @@ describe('redeemPhoneVerification', () => {
     expect(result.status).toBe('verified');
   });
 
+  it('looks the code up with an exact match in SQL rather than comparing app-side', async () => {
+    findFirstVerification.mockResolvedValue(live());
+
+    await redeemPhoneVerification({ code: 'ab12', phone: '+15551234567' });
+
+    // This is the assertion that would have caught the brute-force bug: the
+    // guessed code is what the database is asked to match, so a wrong guess
+    // can never come back as a row whose `code` differs from what was typed.
+    expect(findFirstVerification).toHaveBeenCalledWith({
+      where: { code: 'AB12', verifiedAt: null },
+    });
+  });
+
   it('reports no match for an unknown code without saying which part was wrong', async () => {
     findFirstVerification.mockResolvedValue(null);
 
@@ -107,22 +136,60 @@ describe('redeemPhoneVerification', () => {
     expect(updateUser).not.toHaveBeenCalled();
   });
 
-  it('refuses once the attempt cap is reached, so a short code cannot be ground down', async () => {
-    findFirstVerification.mockResolvedValue(live({ attempts: 5 }));
+  it('refuses a sender who has hit the attempt cap before ever looking up the code', async () => {
+    countAttempts.mockResolvedValue(5);
 
-    expect(await redeemPhoneVerification({ code: 'AB12', phone: '+1555' })).toEqual({
-      status: 'too-many-attempts',
-    });
+    const result = await redeemPhoneVerification({ code: 'AB12', phone: '+1555' });
+
+    expect(result).toEqual({ status: 'too-many-attempts' });
+    expect(findFirstVerification).not.toHaveBeenCalled();
     expect(updateUser).not.toHaveBeenCalled();
   });
 
-  it('counts a failed attempt so repeated guessing runs out', async () => {
-    findFirstVerification.mockResolvedValue(live({ code: 'WXYZ' }));
+  it("only counts a sender's failures inside the verification TTL window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-31T12:00:00.000Z'));
+    findFirstVerification.mockResolvedValue(null);
 
-    await redeemPhoneVerification({ code: 'AB12', phone: '+1555' });
+    await redeemPhoneVerification({ code: 'ZZZZ', phone: '+15559998888' });
 
-    expect(updateVerification).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { attempts: { increment: 1 } } })
+    expect(countAttempts).toHaveBeenCalledWith({
+      where: {
+        phone: '+15559998888',
+        createdAt: { gte: new Date(Date.now() - VERIFICATION_TTL_MINUTES * 60_000) },
+      },
+    });
+  });
+
+  it('records a failed attempt against the sender when the code matches no live row', async () => {
+    findFirstVerification.mockResolvedValue(null);
+
+    await redeemPhoneVerification({ code: 'ZZZZ', phone: '+15559876543' });
+
+    expect(createAttempt).toHaveBeenCalledWith({ data: { phone: '+15559876543' } });
+  });
+
+  it("does not decrement or consume another user's live verification on a wrong guess", async () => {
+    findFirstVerification.mockResolvedValue(null);
+
+    await redeemPhoneVerification({ code: 'ZZZZ', phone: '+1555' });
+
+    // Nothing was found for this code, so no PhoneVerification row — belonging
+    // to this sender or anyone else — is touched.
+    expect(updateVerification).not.toHaveBeenCalled();
+  });
+
+  it('reports phone-in-use rather than throwing when the number already belongs to someone else', async () => {
+    findFirstVerification.mockResolvedValue(live());
+    updateUser.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`phone`)',
+        { code: 'P2002', clientVersion: '7.9.1' }
+      )
     );
+
+    const result = await redeemPhoneVerification({ code: 'AB12', phone: '+15551234567' });
+
+    expect(result).toEqual({ status: 'phone-in-use' });
   });
 });
