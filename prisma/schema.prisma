@@ -44,23 +44,28 @@ model Session {
 }
 
 model User {
-  id                       String    @id @default(cuid())
-  email                    String    @unique
+  id                       String              @id @default(cuid())
+  email                    String              @unique
   name                     String?
   image                    String?
-  emailVerified            DateTime? @map("email_verified")
-  role                     UserRole  @default(USER)
-  currentImpersonationMode ImpersonationMode @default(SELF) @map("current_impersonation_mode")
-  createdAt                DateTime  @default(now()) @map("created_at")
-  updatedAt                DateTime  @updatedAt @map("updated_at")
+  emailVerified            DateTime?           @map("email_verified")
+  role                     UserRole            @default(USER)
+  currentImpersonationMode ImpersonationMode   @default(SELF) @map("current_impersonation_mode")
+  phone                    String?             @unique
+  phoneVerifiedAt          DateTime?           @map("phone_verified_at")
+  smsOptedOutAt            DateTime?           @map("sms_opted_out_at")
+  notificationChannel      NotificationChannel @default(EMAIL) @map("notification_channel")
+  createdAt                DateTime            @default(now()) @map("created_at")
+  updatedAt                DateTime            @updatedAt @map("updated_at")
 
   accounts  Account[]
   sessions  Session[]
   documents Document[]
 
-  mentions       CommentMention[]
-  replyTokens    ThreadReplyToken[]
-  documentShares DocumentShare[]
+  mentions          CommentMention[]
+  replyTokens       ThreadReplyToken[]
+  documentShares    DocumentShare[]
+  phoneVerification PhoneVerification?
 
   @@map("users")
 }
@@ -76,17 +81,17 @@ model VerificationToken {
 
 // Application models
 model Document {
-  id                String   @id @default(cuid())
-  documentEngineId  String   @unique @map("document_engine_id")
-  sessionToken      String?  @map("session_token")
-  title             String
-  filename          String
-  fileType          String   @map("file_type")
-  fileSize          BigInt?  @map("file_size")
-  author            String?
-  ownerId           String   @map("owner_id")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(cuid())
+  documentEngineId String   @unique @map("document_engine_id")
+  sessionToken     String?  @map("session_token")
+  title            String
+  filename         String
+  fileType         String   @map("file_type")
+  fileSize         BigInt?  @map("file_size")
+  author           String?
+  ownerId          String   @map("owner_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -212,4 +217,52 @@ enum ImpersonationMode {
   SELF
   ADMIN
   USER
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  BOTH
+}
+
+/// A phone number being claimed by a user, before it is trusted.
+///
+/// Option B: we never text a number nobody has consented to. The page shows a
+/// code, the reader texts it to us, and the inbound message is both the proof of
+/// possession and the consent record. The number is learned from that message
+/// rather than typed, so there is no field to validate and no typo path.
+///
+/// The code is short so a human can retype it, which makes it guessable by
+/// construction — hence the expiry and the attempt cap. One live row per user:
+/// starting a new verification replaces the old one.
+model PhoneVerification {
+  id         String    @id @default(cuid())
+  userId     String    @unique @map("user_id")
+  code       String
+  phone      String?
+  verifiedAt DateTime? @map("verified_at")
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@map("phone_verifications")
+}
+
+/// One inbound SMS we have accepted. Twilio retries a webhook it believes
+/// failed, so the provider's message SID is recorded and made unique: a
+/// redelivery finds the row and stops rather than posting the reply twice.
+/// The same guard `InboundEmail` provides on the email path.
+model InboundSms {
+  id                String   @id @default(cuid())
+  providerMessageId String   @unique @map("provider_message_id")
+  fromNumber        String   @map("from_number")
+  userId            String?  @map("user_id")
+  threadId          String?  @map("thread_id")
+  dwsCommentId      String?  @map("dws_comment_id")
+  receivedAt        DateTime @default(now()) @map("received_at")
+
+  @@map("inbound_sms")
 }
