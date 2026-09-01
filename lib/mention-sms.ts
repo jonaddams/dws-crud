@@ -15,6 +15,21 @@
  * and asserts it is absent from the SMS body.
  */
 
+/**
+ * The program name every message leads with.
+ *
+ * Three things have to agree on this string, and a carrier reviewer checks all
+ * three against each other: the sample messages filed with the A2P 10DLC
+ * campaign, the examples published at https://jonaddams.com/sms, and what this
+ * function actually sends. A mismatch between the filing and what a recipient
+ * can look up is a documented cause of rejection — the first submission failed
+ * its Call-to-Action check partly for that reason.
+ *
+ * Note this is the *program* name, which is not the same thing as the repository
+ * or the deployment. Renaming either one does not license changing this.
+ */
+const PROGRAM_NAME = 'Bindery';
+
 const STOP_NOTICE = ' Reply STOP to opt out.';
 
 /**
@@ -34,5 +49,5 @@ export const buildMentionSms = (options: {
 }): string => {
   const { authorName, documentTitle, documentUrl } = options;
 
-  return `${authorName} mentioned you on "${documentTitle}". Reply to add a comment. ${documentUrl}${STOP_NOTICE}`;
+  return `${PROGRAM_NAME}: ${authorName} mentioned you on "${documentTitle}". Reply to add a comment. ${documentUrl}${STOP_NOTICE}`;
 };
