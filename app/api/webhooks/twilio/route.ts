@@ -7,6 +7,16 @@ import {
 } from '@/lib/phone-verification';
 import { prisma } from '@/lib/prisma';
 import { classifyKeyword } from '@/lib/sms-keywords';
+import {
+  ALREADY_REGISTERED_MESSAGE,
+  CODE_EXPIRED_MESSAGE,
+  HELP_MESSAGE,
+  NO_THREAD_MESSAGE,
+  OPTED_BACK_IN_MESSAGE,
+  PHONE_IN_USE_MESSAGE,
+  REGISTERED_MESSAGE,
+  TOO_MANY_ATTEMPTS_MESSAGE,
+} from '@/lib/sms-program';
 import { verifyTwilioSignature } from '@/lib/twilio';
 
 /**
@@ -118,13 +128,11 @@ export async function POST(request: Request) {
   if (keyword === 'start') {
     await prisma.user.updateMany({ where: { phone: from }, data: { smsOptedOutAt: null } });
 
-    return twiml("You're opted back in. Reply STOP to opt out.");
+    return twiml(OPTED_BACK_IN_MESSAGE);
   }
 
   if (keyword === 'help') {
-    return twiml(
-      'Mention notifications for your documents. Reply to a notification to comment. Reply STOP to opt out.'
-    );
+    return twiml(HELP_MESSAGE);
   }
 
   // Registration first — see the ordering note above. This is an exhaustive
@@ -151,19 +159,19 @@ export async function POST(request: Request) {
 
   switch (redeemed.status) {
     case 'verified':
-      return twiml("You're registered. You'll get a text when someone mentions you.");
+      return twiml(REGISTERED_MESSAGE);
     case 'phone-in-use':
-      return twiml('That number is already registered to a different account.');
+      return twiml(PHONE_IN_USE_MESSAGE);
     case 'too-many-attempts':
-      return twiml('Too many attempts. Please wait and request a new code.');
+      return twiml(TOO_MANY_ATTEMPTS_MESSAGE);
     case 'expired':
-      return twiml('That code has expired. Please request a new one.');
+      return twiml(CODE_EXPIRED_MESSAGE);
     case 'already-registered':
       // A second delivery of a code the sender already redeemed — most likely
       // a resend after a slow first reply. Reassure rather than silently
       // falling through to the reply path, which would otherwise post the
       // verification code itself as a comment on a document thread.
-      return twiml("You're already registered. You'll get a text when someone mentions you.");
+      return twiml(ALREADY_REGISTERED_MESSAGE);
     case 'no-match':
       // This text was never a verification code attempt — fall through and
       // treat it as a reply. This is the only status that means that.
@@ -204,7 +212,7 @@ export async function POST(request: Request) {
   });
 
   if (!latest) {
-    return twiml('No recent comment thread to reply to. Open the document to comment.');
+    return twiml(NO_THREAD_MESSAGE);
   }
 
   const thread = latest.comment.thread;
