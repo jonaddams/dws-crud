@@ -1533,6 +1533,16 @@ database.
   published number in `lib/legal.ts` (in the `nutrient-sdk-samples` repo) must
   match the number actually registered for the campaign, or the filing is
   inconsistent with what a recipient can look up.
+- **Three places state the program name and must agree**: `PROGRAM_NAME` in
+  `lib/mention-sms.ts` (what recipients actually receive), `LEGAL.appName` in
+  `nutrient-sdk-samples/lib/legal.ts` (what `/sms` publishes), and the sample
+  messages filed with the A2P campaign. The name is currently **Bindery**, which
+  is deliberately *not* the repository name or the deployment host — a reviewer
+  compares the filing against the published page against a real message, so
+  renaming the project does not license changing this. The first submission was
+  rejected on its Call-to-Action check with several of these disagreeing at once:
+  the page named a host that did not resolve, published the trial number rather
+  than the registered one, and showed a `Bindery:` prefix the code did not send.
 
 ## Summary
 

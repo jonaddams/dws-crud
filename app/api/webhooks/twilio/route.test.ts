@@ -38,6 +38,8 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+import { REGISTERED_MESSAGE } from '@/lib/sms-program';
+
 const { POST } = await import('@/app/api/webhooks/twilio/route');
 
 const post = (params: Record<string, string>) =>
@@ -101,6 +103,19 @@ describe('registration', () => {
 
     expect(body).toContain('<Response>');
     expect(body.toLowerCase()).toContain('registered');
+  });
+
+  it('sends the registered copy verbatim, so the filed samples cannot drift from it', async () => {
+    // Asserted against the constant rather than a literal. The campaign's sample
+    // messages, the published page and this reply must all say the same thing;
+    // a substring assertion would pass against a hand-inlined variant, which is
+    // exactly how the three drifted apart before.
+    redeemPhoneVerification.mockResolvedValue({ status: 'verified', userId: 'user_1' });
+
+    const body = await (await POST(post({ ...inboundReply, Body: 'AB12' }))).text();
+
+    expect(body).toContain(REGISTERED_MESSAGE);
+    expect(REGISTERED_MESSAGE).toMatch(/^Bindery: /);
   });
 
   it('tells the sender a code has expired rather than posting it as a reply', async () => {

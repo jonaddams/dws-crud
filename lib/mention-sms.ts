@@ -15,6 +15,8 @@
  * and asserts it is absent from the SMS body.
  */
 
+import { PROGRAM_NAME } from '@/lib/sms-program';
+
 const STOP_NOTICE = ' Reply STOP to opt out.';
 
 /**
@@ -34,5 +36,5 @@ export const buildMentionSms = (options: {
 }): string => {
   const { authorName, documentTitle, documentUrl } = options;
 
-  return `${authorName} mentioned you on "${documentTitle}". Reply to add a comment. ${documentUrl}${STOP_NOTICE}`;
+  return `${PROGRAM_NAME}: ${authorName} mentioned you on "${documentTitle}". Reply to add a comment. ${documentUrl}${STOP_NOTICE}`;
 };

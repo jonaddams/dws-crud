@@ -7,7 +7,11 @@
  * hearing from us.
  */
 
-const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
+// These lists are filed with the A2P 10DLC campaign. Honouring fewer keywords
+// than the filing promises is a compliance failure a carrier can test directly,
+// and it fails badly rather than quietly: an unrecognised keyword falls through
+// to the reply path and gets posted into a document as a comment.
+const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'OPTOUT', 'REVOKE'];
 const START_WORDS = ['START', 'YES', 'UNSTOP'];
 const HELP_WORDS = ['HELP', 'INFO'];
 

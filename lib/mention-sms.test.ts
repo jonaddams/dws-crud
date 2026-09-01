@@ -10,6 +10,13 @@ const options = {
 };
 
 describe('buildMentionSms', () => {
+  it('identifies the sending program, so a recipient knows who is texting them', () => {
+    // Carriers expect an A2P message to identify its program, and this prefix is
+    // registered as part of the campaign's sample messages. Someone reading a
+    // lock screen sees the program name before anything else.
+    expect(buildMentionSms(options)).toMatch(/^Bindery: /);
+  });
+
   it('names the author and the document and links to it', () => {
     const message = buildMentionSms(options);
 
