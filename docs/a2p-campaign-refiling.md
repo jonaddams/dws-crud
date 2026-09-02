@@ -93,6 +93,39 @@ Sample 4 replaces the code-expiry message. It is a real message the program
 sends, it is representative of the registration flow, and it carries both
 keywords.
 
+## File this: "How do end-users consent to receive messages?"
+
+This is TCR's `MESSAGE_FLOW` field. It is **text only — there is no image
+upload**, which is why the screenshot has to live on a public page and be linked
+from here. A link on its own is not enough either: reviewers expect the flow
+described in the field, and a bare URL is a documented rejection cause. So the
+text below both describes the flow and points at the page.
+
+`Settings > Notifications` uses an ASCII `>` on purpose; the arrow character
+does not survive every form.
+
+**Do not file this until the screenshot is actually live on the page.** The text
+asserts that a screenshot is published there, and asserting evidence that is not
+present is precisely what failed the last two submissions. Land the page change
+first, load `https://jonaddams.com/sms`, confirm the image is visible, then file.
+
+**Full version (1170 characters):**
+
+```
+End users opt in by texting us first; Bindery never sends a message to an unconfirmed number. A signed-in user opens Settings > Notifications at bindery.jonaddams.com, where a four-character single-use code is displayed together with our number, +1 269 292-5337. The user texts that code from the handset they want to register. That inbound message is the consent record, and we store the number, the message and the time it arrived. No phone number is ever typed into a form, so a number can only be registered by the person holding it. The opt-in screen states the program name, that messages relate only to documents the user already has access to, that message frequency varies, that message and data rates may apply, that STOP opts out and HELP gets help, and that consent is not a condition of use; it also links our terms of service and privacy policy. The full flow, the disclosures and a screenshot of the opt-in screen are published at https://jonaddams.com/sms. Bindery is an internal application, so sign-in is restricted to nutrient.io and pspdfkit.com accounts and a reviewer cannot self-register; email support@jonaddams.com for a walkthrough of the flow.
+```
+
+**Short version (822 characters)**, if the field rejects the above:
+
+```
+End users opt in by texting us first; Bindery never sends to an unconfirmed number. A signed-in user opens Settings > Notifications at bindery.jonaddams.com, where a four-character single-use code is shown with our number, +1 269 292-5337, and texts that code from the handset they want to register. That inbound message is the consent record; we store the number, the message and the time. No phone number is ever typed into a form. The screen discloses the program name, message frequency, that rates may apply, STOP and HELP, and that consent is not a condition of use, and links our terms and privacy policy. Flow, disclosures and a screenshot: https://jonaddams.com/sms. Sign-in is restricted to nutrient.io and pspdfkit.com accounts, so a reviewer cannot self-register; email support@jonaddams.com for a walkthrough.
+```
+
+Both name the restriction on sign-in and offer a human. That matters more than it
+looks: the previous submission sent a reviewer to a login they could not pass,
+with no explanation and no alternative, and "could not verify" is the outcome
+that gets recorded.
+
 ## File this: number
 
 ```
