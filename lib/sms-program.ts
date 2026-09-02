@@ -33,9 +33,48 @@ export const PROGRAM_NAME = 'Bindery';
 
 const prefixed = (message: string): string => `${PROGRAM_NAME}: ${message}`;
 
-/** Sent when someone texts a valid, live verification code. */
+/**
+ * The number a reader texts their verification code to, formatted for display.
+ *
+ * The digits come from `TWILIO_PHONE_NUMBER`, so the opt-in screen always shows
+ * the number the app actually receives on. The *formatting* is fixed here to
+ * match https://jonaddams.com/sms exactly, because a carrier reviewer compares
+ * the number on the screen against the published page against the number filed
+ * with the campaign — and a difference in punctuation is still a difference.
+ *
+ * Anything that is not a US 11-digit E.164 number is returned untouched. Forcing
+ * an unrecognised value into a US shape would display a number nobody can text.
+ */
+export const formatProgramNumber = (rawNumber: string): string => {
+  const digits = rawNumber.replace(/\D/g, '');
+
+  if (digits.length !== 11 || !digits.startsWith('1')) {
+    return rawNumber;
+  }
+
+  const area = digits.slice(1, 4);
+  const exchange = digits.slice(4, 7);
+  const line = digits.slice(7);
+
+  return `+1 ${area} ${exchange}-${line}`;
+};
+
+/**
+ * Sent when someone texts a valid, live verification code.
+ *
+ * This is the consent receipt, and a carrier reviewer reads it as such, so it
+ * carries the whole disclosure set on its own rather than leaning on the
+ * published page: the program name, what the messages are, how often they come,
+ * that rates may apply, and both keywords.
+ *
+ * The campaign's second submission was rejected for "invalid sample message
+ * content" with this filed as sample #2 carrying neither the frequency nor the
+ * rates disclosure. Wording is tight because the whole thing still has to fit
+ * one 160-character GSM segment (it lands at 150) — see the segment test in
+ * sms-program.test.ts before editing.
+ */
 export const REGISTERED_MESSAGE = prefixed(
-  "Your number is registered. You'll get a text when someone mentions you in a document comment. Reply HELP for help, STOP to cancel."
+  "You're registered. Get a text when someone mentions you. Msg frequency varies. Msg&data rates may apply. Reply HELP for help, STOP to cancel."
 );
 
 /** Sent when someone re-texts a code they have already redeemed themselves. */
