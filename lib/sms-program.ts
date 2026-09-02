@@ -110,3 +110,36 @@ export const PHONE_IN_USE_MESSAGE = prefixed(
 export const NO_THREAD_MESSAGE = prefixed(
   'No recent comment thread to reply to. Open the document to comment.'
 );
+
+/**
+ * Where the program's public terms live.
+ *
+ * The opt-in screen has to link these: a carrier reviewer checking the
+ * Call-to-Action expects the consent surface itself to reach the terms and the
+ * privacy policy, not merely to exist somewhere on the site.
+ */
+export const PROGRAM_LEGAL_URLS = {
+  program: 'https://jonaddams.com/sms',
+  terms: 'https://jonaddams.com/terms',
+  privacy: 'https://jonaddams.com/privacy',
+} as const;
+
+/**
+ * The disclosures shown next to the opt-in action.
+ *
+ * These belong on the screen where consent is given, which is the screen a
+ * carrier reviewer asks to see. The campaign's second submission failed its
+ * Call-to-Action check partly because that screen did not exist at all, so there
+ * was nothing to show and nothing to screenshot.
+ *
+ * They must say the same thing as https://jonaddams.com/sms. That page is
+ * rendered from a different repository, which is precisely how the wording
+ * drifted last time, so keep the two in step deliberately.
+ */
+export const CONSENT_DISCLOSURES = [
+  `${PROGRAM_NAME} texts you only about documents you already have access to — most often when a colleague mentions you in a comment.`,
+  'Message frequency varies. Messages are sent in response to activity, so how many you get depends on your own use of the application.',
+  'Message and data rates may apply.',
+  'Reply STOP to any message to opt out immediately, or HELP for help.',
+  `Consent is not a condition of using ${PROGRAM_NAME}, and no marketing messages are ever sent.`,
+] as const;
