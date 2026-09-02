@@ -104,27 +104,48 @@ This must be the number registered to the campaign, and it must match
 renders it from the environment through `formatProgramNumber`, so the screen
 cannot disagree with what the app receives on.
 
-## Fix this: the published page
+## The published page — done, except the screenshot
 
-The page is rendered from `LEGAL` in `lib/legal.ts` of the `nutrient-sdk-samples`
-repository. Three changes:
+Done on branch `sms-cta-fixes` of `nutrient-sdk-samples`.
 
-1. **Replace the screenshot placeholder** with a real screenshot of
-   `/settings`, showing the code, the number, and the disclosures.
-2. **Correct the example mention message** to match the filing exactly:
+The prose lives in **`app/sms/page.tsx`**, not in `lib/legal.ts` — `legal.ts`
+holds only shared facts (brand, domain, number, disclosures), which is why the
+placeholder was not visible there.
 
-   ```
-   Bindery: Alice Example mentioned you on "Q3 Contract". Reply to add a comment. https://bindery.jonaddams.com/documents/abc123 Reply STOP to opt out.
-   ```
+What changed:
 
-   Straight quotes, not curly — the page currently uses `“ ”`.
-3. **Say that sign-in is restricted.** A reviewer following the instructions will
-   be refused, and an unexplained dead end reads worse than a documented
-   limitation. Suggested wording:
+1. **The screenshot placeholder is gone.** It read, publicly, *"[ Screenshot of
+   the Settings → Notifications opt-in screen goes here before the campaign is
+   submitted. ]"*. That slot now describes what the opt-in screen shows — the
+   off-by-default state, the disclosures beside the opt-in control, the links to
+   the terms and privacy policy, the single-use code and the number, and the
+   absence of any phone-number field.
+2. **Sign-in restriction disclosed.** The page said "sign in with your Google
+   account" and nothing more, so a reviewer following it hit an unexplained
+   refusal. It now names the `nutrient.io` / `pspdfkit.com` limit and offers
+   `support@jonaddams.com` for a walkthrough.
+3. **The example messages now render from `SAMPLE_MESSAGES` in `lib/legal.ts`**
+   rather than being hand-typed prose. That is the structural fix: prose is how
+   they drifted twice, and React renders a straight quote as a straight quote,
+   so the `&ldquo;`/`&rdquo;` mismatch cannot recur. All four filed samples are
+   shown.
 
-   > Bindery is an internal application for Nutrient staff, so sign-in is
-   > limited to `nutrient.io` and `pspdfkit.com` accounts. The opt-in screen is
-   > shown below; contact support@jonaddams.com for a walkthrough.
+**Still outstanding: a real screenshot.** It cannot be produced without a
+`nutrient.io` sign-in. Drop the image at `public/bindery-sms-optin.png` and
+replace the descriptive paragraph inside the `SCREENSHOT_SLOT` div with:
+
+```tsx
+<Image
+  src="/bindery-sms-optin.png"
+  alt={`The ${LEGAL.appName} Settings → Notifications opt-in screen, showing the single-use code, the number to text it to, and the program disclosures`}
+  width={1200}
+  height={800}
+  style={{ width: "100%", height: "auto" }}
+/>
+```
+
+Keep the descriptive paragraph underneath it as a caption; a reviewer reading
+text is not worse off, and it survives an image that fails to load.
 
 ## Before submitting, check the three-way match
 
@@ -137,7 +158,11 @@ repository. Three changes:
 
 ## Still open
 
-The page lives in a different repository from the constants, which is how the
-wording drifted twice. Worth a test that fetches <https://jonaddams.com/sms> and
-asserts its examples match the constants — otherwise the next edit to either side
-can silently break the match again.
+The samples are now data on both sides — `SAMPLE_MESSAGES` in
+`nutrient-sdk-samples/lib/legal.ts` and the constants in `lib/sms-program.ts`
+here — so neither can drift from *its own page* any more. What no build can
+check is that the two repositories agree with each other, and that either agrees
+with the filing.
+
+Worth a test that fetches <https://jonaddams.com/sms> and asserts its examples
+match the constants in this repo. It would have caught both rejections.
