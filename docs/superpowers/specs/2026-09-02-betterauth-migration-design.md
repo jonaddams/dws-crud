@@ -213,13 +213,43 @@ Reshaped to `id`, `identifier`, `value`, `expires_at`, `created_at`,
 `updated_at`. The table is unused in practice — there is no email/password or
 magic-link provider — so it is dropped and recreated rather than converted.
 
-### Ground truth for the schema
+### Ground truth for the schema — verified against 1.7.2
 
-BetterAuth's `account` unique key is `[providerId, accountId]` in the core table
-definition but `[issuer, accountId]` in newer Prisma fixtures; it is
-version-dependent. **Do not hand-write the auth models.** Pin the BetterAuth
-version, run the BetterAuth CLI's schema generator against it, and treat that
-output as authoritative, reconciling it against the existing `@@map`ped names.
+The version is pinned at `better-auth@1.7.2`. `@better-auth/cli` is only
+published at 1.4.21, so its generator is a version behind the library and was
+**not** used. The schema below was read out of the installed package by calling
+`getAuthTables()` from `better-auth/db` directly, which is what the runtime
+itself uses.
+
+`account` carries **three** identity columns in 1.7.2, not two:
+
+| field | type | notes |
+| --- | --- | --- |
+| `issuer` | string, required | new in this line; see below |
+| `accountId` | string, required | the provider's subject claim |
+| `providerId` | string, required | `'google'`, `'microsoft'` |
+
+`issuer` is resolved per provider by `resolveOAuthAccountKey`. A provider may
+declare `accountIssuer`; only if it does not does BetterAuth fall back to
+`createOAuthAccountIssuer(id)`, which returns `` `local:oauth:${id}` ``. Both
+providers here declare one, so the fallback never applies:
+
+| provider | `id` | `accountSubject` | `accountIssuer` |
+| --- | --- | --- | --- |
+| Google | `google` | `profile.sub` | `"https://accounts.google.com"` (literal) |
+| Microsoft | `microsoft` | `profile.oid` | `profile.iss` (dynamic) |
+
+**This is what the `accounts` backfill turns on.** Existing NextAuth rows have no
+`issuer`, and their `provider_account_id` holds the Google `sub`. So the backfill
+is `issuer = 'https://accounts.google.com'` for every row where
+`provider = 'google'`, and `account_id = provider_account_id`. Get the issuer
+string wrong and the row does not match at sign-in: BetterAuth treats it as an
+unknown account, falls through to linking-by-email, and quietly creates a second
+account row. No Microsoft rows exist yet, so nothing to backfill there.
+
+Microsoft's dynamic issuer resolves to `${authority}/${tid}/v2.0`. With a real
+tenant GUID the provider additionally pins expected-issuer validation, which is
+the concrete reason single-tenant is stronger than a post-hoc domain check.
 
 Migrations are produced with `prisma migrate dev --create-only`, the SQL is
 reviewed, then applied with `prisma migrate deploy`. Bare `prisma migrate dev`
@@ -270,20 +300,24 @@ The gate is `pnpm pre-commit` (`biome check --write` → `typecheck` → `test` 
 `{ field: value }` literal only type-checks against a model's generated
 `WhereUniqueInput` when that field actually carries `@unique`/`@id`.
 
-### Module-load-time initialisation is a hazard
+### Module-load-time initialisation — checked, not a problem
 
 `lib/auth.test.ts` imports `@/lib/auth`, which imports `lib/auth-config.ts`,
-which calls `betterAuth({...})` at module scope. If that constructor validates
-its options eagerly — a missing `BETTER_AUTH_SECRET`, an unreachable database URL
-— then importing the module throws and a test file that only exercises three pure
-functions fails for reasons that have nothing to do with them.
+which calls `betterAuth({...})` at module scope. Had that constructor validated
+eagerly, importing the module would throw and a test file exercising three pure
+functions would fail for reasons unrelated to them — which would have falsified
+the claim that `lib/auth.test.ts` needs no edit.
 
-This is the most likely way the claim "`lib/auth.test.ts` needs no edit" turns
-out false, so establish it early: import the module in a scratch test before
-writing anything else. If the constructor does throw, the fix is dummy auth
-environment variables in `vitest.setup.ts`, not restructuring the exports —
-moving the filter functions to another module would change the import path in
-every route and forfeit the whole containment strategy.
+**Verified against 1.7.2 before planning:** `betterAuth()` constructs lazily. With
+no `BETTER_AUTH_SECRET`, no `BETTER_AUTH_URL`, no database and empty provider
+credentials it returns a working object with `api.getSession` and `handler`
+present, emitting warnings only. So no dummy environment variables are needed in
+`vitest.setup.ts` and the containment strategy holds as written.
+
+Should this change on a future upgrade, the fix is dummy auth environment
+variables in `vitest.setup.ts` — **not** moving the filter functions to another
+module, which would change the import path in every route and forfeit the
+containment.
 
 ## Environment
 
