@@ -109,16 +109,48 @@ asserts that a screenshot is published there, and asserting evidence that is not
 present is precisely what failed the last two submissions. Land the page change
 first, load `https://jonaddams.com/sms`, confirm the image is visible, then file.
 
-**Full version (1170 characters):**
+### Twilio's automated pre-check objects to this flow
+
+Before submitting, Twilio's own checker raised a **warning** (amber, not a
+blocking error — "Submit registration" stayed enabled):
+
+> Your opt-in form doesn't have a phone number field connected to SMS consent.
+> Add a phone number field on the same form as the SMS consent checkbox so it's
+> clear consumers are giving that number permission to receive texts.
+
+The checker is pattern-matching for the common web-form opt-in: a page with a
+phone input and a consent checkbox. This program does not have one, on purpose.
+
+**Do not "fix" this by adding a phone field and a consent checkbox.** It would
+be a real regression, not a compliance improvement:
+
+- The consent model here is **mobile-originated (MO)**: the consumer's own
+  outbound text from their handset is the consent record. That is stronger
+  evidence than a checkbox next to a typed number, because a typed number can
+  belong to somebody else.
+- `https://jonaddams.com/sms` publishes the promise that "you are never asked to
+  type a phone number into a form".
+- A test in `components/notification-settings.test.tsx` asserts no textbox
+  renders, precisely so this cannot be undone quietly.
+
+The answer is to say so in the reviewer's vocabulary — name the opt-in as MO,
+and state explicitly that there is no form, no phone field and no checkbox, and
+why. Then click **Recheck Campaign**. If the warning persists it is heuristic,
+and submitting is still reasonable: MO opt-in is a recognised consent method.
+
+Keep the field ASCII. `Settings > Notifications` uses `>` rather than an arrow,
+and there are no em-dashes, because neither survives every form.
+
+**Full version (1412 characters):**
 
 ```
-End users opt in by texting us first; Bindery never sends a message to an unconfirmed number. A signed-in user opens Settings > Notifications at bindery.jonaddams.com, where a four-character single-use code is displayed together with our number, +1 269 292-5337. The user texts that code from the handset they want to register. That inbound message is the consent record, and we store the number, the message and the time it arrived. No phone number is ever typed into a form, so a number can only be registered by the person holding it. The opt-in screen states the program name, that messages relate only to documents the user already has access to, that message frequency varies, that message and data rates may apply, that STOP opts out and HELP gets help, and that consent is not a condition of use; it also links our terms of service and privacy policy. The full flow, the disclosures and a screenshot of the opt-in screen are published at https://jonaddams.com/sms. Bindery is an internal application, so sign-in is restricted to nutrient.io and pspdfkit.com accounts and a reviewer cannot self-register; email support@jonaddams.com for a walkthrough of the flow.
+This is a mobile-originated (MO) opt-in: the consumer sends us the first message, and Bindery never sends to an unconfirmed number. There is deliberately no web opt-in form, and therefore no phone number field and no SMS consent checkbox - the consumer's own outbound text from the handset is the consent record, which is why no number is ever typed into a form and a number cannot be registered by anyone other than the person holding it. The flow: a signed-in user opens Settings > Notifications at bindery.jonaddams.com, where a four-character single-use code is displayed together with our number, +1 269 292-5337. The user texts that code from the mobile number they want to register. We match the code to their account and reply once to confirm, storing the number, the message and the time it arrived. That screen states the program name, that messages relate only to documents the user already has access to, that message frequency varies, that message and data rates may apply, that STOP opts out and HELP gets help, and that consent is not a condition of use; it also links our terms of service and privacy policy. The flow, the disclosures and a screenshot of that screen are published at https://jonaddams.com/sms. Bindery is an internal application, so sign-in is restricted to nutrient.io and pspdfkit.com accounts and a reviewer cannot self-register; email support@jonaddams.com for a walkthrough.
 ```
 
-**Short version (822 characters)**, if the field rejects the above:
+**Short version (1000 characters)**, if the field rejects the above:
 
 ```
-End users opt in by texting us first; Bindery never sends to an unconfirmed number. A signed-in user opens Settings > Notifications at bindery.jonaddams.com, where a four-character single-use code is shown with our number, +1 269 292-5337, and texts that code from the handset they want to register. That inbound message is the consent record; we store the number, the message and the time. No phone number is ever typed into a form. The screen discloses the program name, message frequency, that rates may apply, STOP and HELP, and that consent is not a condition of use, and links our terms and privacy policy. Flow, disclosures and a screenshot: https://jonaddams.com/sms. Sign-in is restricted to nutrient.io and pspdfkit.com accounts, so a reviewer cannot self-register; email support@jonaddams.com for a walkthrough.
+This is a mobile-originated (MO) opt-in: the consumer sends the first message, and Bindery never sends to an unconfirmed number. There is deliberately no web opt-in form, so there is no phone number field and no consent checkbox - the consumer's own text from the handset is the consent record, and no number is ever typed into a form. A signed-in user opens Settings > Notifications at bindery.jonaddams.com, where a four-character single-use code is shown with our number, +1 269 292-5337, and texts that code from the number they want to register; we reply once to confirm and store the number, message and time. That screen discloses the program name, message frequency, that rates may apply, STOP and HELP, and that consent is not a condition of use, and links our terms and privacy policy. Flow, disclosures and screenshot: https://jonaddams.com/sms. Sign-in is limited to nutrient.io and pspdfkit.com accounts, so a reviewer cannot self-register; email support@jonaddams.com for a walkthrough.
 ```
 
 Both name the restriction on sign-in and offer a human. That matters more than it
