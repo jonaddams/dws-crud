@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { RoleSwitcher } from '@/components/role-switcher';
+import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import type { SessionUser } from '@/lib/auth';
 
@@ -26,12 +26,7 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
               <span className="text-xs sm:text-sm text-muted truncate max-w-20 sm:max-w-none">
                 {user.name || user.email}
               </span>
-              <Link
-                href="/api/auth/signout"
-                className="text-xs sm:text-sm text-primary hover:text-primary-hover transition-colors cursor-pointer"
-              >
-                Sign out
-              </Link>
+              <SignOutButton />
             </div>
           </div>
         </div>

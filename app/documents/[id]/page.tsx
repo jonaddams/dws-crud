@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { DocumentViewer } from '@/components/document-viewer';
+import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { getEffectiveDocumentFilter, requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -98,12 +99,7 @@ export default async function DocumentView({ params }: { params: Promise<Params>
                   <span className="text-xs sm:text-sm text-muted truncate max-w-20 sm:max-w-none">
                     {session.user.name || session.user.email}
                   </span>
-                  <Link
-                    href="/api/auth/signout"
-                    className="text-xs sm:text-sm text-primary hover:text-primary-hover transition-colors cursor-pointer"
-                  >
-                    Sign out
-                  </Link>
+                  <SignOutButton />
                 </div>
               </div>
             </div>

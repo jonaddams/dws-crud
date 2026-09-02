@@ -1651,6 +1651,29 @@ grep -rn "from 'next-auth" app lib components hooks types global.d.ts
 Note also that `hooks/` is easy to omit from a survey sweep — that is exactly how
 the stale import above survived until the grep.
 
+### Grepping imports is still not enough: hardcoded endpoint URLs
+
+An import search finds none of this. `components/dashboard-header.tsx`,
+`app/upload/page.tsx` and `app/documents/[id]/page.tsx` each carried
+
+```tsx
+<Link href="/api/auth/signout">Sign out</Link>
+```
+
+NextAuth served a GET page there. BetterAuth's endpoint is
+**`POST /api/auth/sign-out`** — different path, different method — so sign-out
+broke on all three pages while the build, the typecheck and every test stayed
+green. Nothing imports anything; it is a string.
+
+`components/sign-out-button.tsx` now owns this: a button that calls the client's
+`signOut()`, used everywhere. It keeps the method correct and the URL out of the
+markup, so the next auth change cannot repeat the failure. When swapping an auth
+library, also grep the provider's route prefix:
+
+```bash
+grep -rn "/api/auth/" app components hooks lib
+```
+
 ## Summary
 
 The key is to write clean, testable, functional code that evolves through small, safe increments. Every change should be driven by a test that describes the desired behavior, and the implementation should be the simplest thing that makes that test pass. When in doubt, favor simplicity and readability over cleverness.
