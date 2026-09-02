@@ -1462,10 +1462,27 @@ database.
 - **STOP/HELP are handled in our webhook rather than left to Twilio's Advanced
   Opt-Out,** so `smsOptedOutAt` reflects reality and the notifier stops queuing
   sends Twilio would otherwise silently drop. Keyword matching is whole-message
-  (STOP/STOPALL/UNSUBSCRIBE/CANCEL/END/QUIT to opt out; START/YES/UNSTOP to
-  opt back in; HELP/INFO for help), not substring, and it is checked before the
-  verification-code check so a STOP from an otherwise-valid sender still opts
-  them out rather than being swallowed as a reply attempt.
+  (STOP/STOPALL/UNSUBSCRIBE/CANCEL/END/QUIT/**OPTOUT**/**REVOKE** to opt out;
+  START/YES/UNSTOP to opt back in; HELP/INFO for help), not substring, and it is
+  checked before the verification-code check so a STOP from an otherwise-valid
+  sender still opts them out rather than being swallowed as a reply attempt.
+  `lib/sms-keywords.ts` is the authority — this list was previously missing
+  OPTOUT and REVOKE, and an out-of-date copy here is how a wrong list gets filed
+  with the campaign.
+- **The opt-in keywords are START/YES/UNSTOP, not VERIFY.** Texting a
+  verification *code* is how a new number registers; there is no keyword for it.
+  The campaign's third submission was nearly filed claiming `VERIFY,VERIFICATION`
+  as opt-in keywords, which the code does not handle at all — and an
+  unrecognised keyword does not fail politely, it falls through to the reply path
+  and gets **posted into a document as a comment**. `lib/sms-keywords.ts` warns
+  about exactly this in its header.
+- **The webhook is deliberately silent on STOP.** It records `smsOptedOutAt` and
+  replies with nothing, because Twilio sends the carrier-mandated confirmation
+  itself and a message of our own to somebody who just left is what they asked
+  us to stop doing. So the opt-out confirmation a recipient sees is *Twilio's*
+  default text, not ours — which is what the campaign should file for that
+  field. This has never been observed in production, because outbound is blocked
+  until the campaign clears; confirm it once sending is live.
 - **A verification code cannot be brute-force-capped per row, because the guess
   is unauthenticated.** The natural-looking implementation —
   `findFirst({ where: { code, verifiedAt: null } })` — puts the guessed code
@@ -1746,3 +1763,13 @@ together, and expect a brief window where in-flight requests fail.
 ## Summary
 
 The key is to write clean, testable, functional code that evolves through small, safe increments. Every change should be driven by a test that describes the desired behavior, and the implementation should be the simplest thing that makes that test pass. When in doubt, favor simplicity and readability over cleverness.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
