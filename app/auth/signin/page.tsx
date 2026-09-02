@@ -1,37 +1,28 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { getSession, signIn } from 'next-auth/react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { signIn, useSession } from '@/lib/auth-client';
 
 // Force dynamic rendering to prevent static generation issues
 export const dynamic = 'force-dynamic';
 
+const PROVIDERS = [
+  { id: 'google', label: 'Sign in with Google' },
+  { id: 'microsoft', label: 'Sign in with Microsoft' },
+] as const;
+
 export default function SignIn() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: session, isPending } = useSession();
 
   useEffect(() => {
-    // Check if user is already signed in
-    getSession().then((session) => {
-      if (session) {
-        router.push('/dashboard');
-      } else {
-        setIsLoading(false);
-      }
-    });
-  }, [router]);
-
-  const handleSignIn = async () => {
-    setIsLoading(true);
-    try {
-      await signIn('google', { callbackUrl: '/dashboard' });
-    } catch (_error) {
-      setIsLoading(false);
+    if (session) {
+      router.push('/dashboard');
     }
-  };
+  }, [session, router]);
 
-  if (isLoading) {
+  if (isPending || session) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -51,14 +42,17 @@ export default function SignIn() {
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">Nutrient DWS CRUD Application</p>
         </div>
-        <div>
-          <button
-            type="button"
-            onClick={handleSignIn}
-            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            Sign in with Google
-          </button>
+        <div className="space-y-3">
+          {PROVIDERS.map((provider) => (
+            <button
+              key={provider.id}
+              type="button"
+              onClick={() => signIn.social({ provider: provider.id, callbackURL: '/dashboard' })}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              {provider.label}
+            </button>
+          ))}
         </div>
       </div>
     </div>
