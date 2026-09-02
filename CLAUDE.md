@@ -1544,6 +1544,113 @@ database.
   the page named a host that did not resolve, published the trial number rather
   than the registered one, and showed a `Bindery:` prefix the code did not send.
 
+## Authentication (BetterAuth)
+
+Replaced NextAuth v4 on 2026-09-02. Pinned to `better-auth@1.7.2`. Design and
+plan: `docs/superpowers/specs/2026-09-02-betterauth-migration-design.md` and
+`docs/superpowers/plans/2026-09-02-betterauth-migration.md`.
+
+- **`lib/auth.ts`'s public surface is deliberately frozen.** Twelve routes under
+  `app/api/` catch the error `requireAuth()` throws and compare
+  `error.message === 'Authentication required'` **literally** to map it to a 401.
+  Reword that string and every unauthenticated request becomes a 500 instead.
+  Holding the surface still is what kept the migration to nine files: the twelve
+  routes, the four route tests that `vi.mock('@/lib/auth')`, and `lib/auth.test.ts`
+  all needed no edit. `lib/auth.test.ts` passing **unmodified** is the regression
+  guard — if a future change needs to touch it, that is the signal the surface
+  moved.
+- **There is no `requireAdmin` any more.** It was exported and called from
+  nowhere, and its `'Admin access required'` string was matched nowhere.
+- **`getSession()` re-reads `role` and `currentImpersonationMode` from Postgres
+  on every call**, rather than using BetterAuth's session-cached
+  `user.additionalFields`. The admin role switcher writes to the `users` row; a
+  cached value makes the switcher appear to do nothing until the next sign-in.
+  The extra query is the point, not an oversight. Both fields are still declared
+  as `additionalFields` so the inferred client knows their types, but
+  `getSession()` overwrites them from the fresh row.
+- **`session.user.id` never varies with `currentImpersonationMode`.**
+  Impersonation widens document *visibility* only. DWS records this id as a
+  comment's author and it is what a verified phone number binds to, so
+  conflating the two would post comments as someone else and bind an admin's
+  phone to another account. Asserted for all three enum values in
+  `lib/auth-session.test.ts`.
+- **`account.issuer` is required in BetterAuth 1.7.2**, alongside `accountId` and
+  `providerId`, and the account unique key is `(issuer, accountId)` — not
+  `(provider, providerAccountId)`. Google declares a literal `accountIssuer` of
+  `https://accounts.google.com`; Microsoft resolves its own from `profile.iss`
+  (so `${authority}/${tid}/v2.0`). BetterAuth's synthetic `local:oauth:<id>`
+  form applies **only** to providers that declare neither, so it is not what
+  either of ours uses. The migration backfills the Google literal. Get that
+  string wrong and an existing row stops matching at sign-in: BetterAuth treats
+  the account as unknown, falls through to linking-by-email, and quietly creates
+  a duplicate account row rather than failing.
+- **`@better-auth/cli` lags the library** — published at 1.4.21 against a 1.7.2
+  library — so it is not a safe schema source. Read the truth out of the
+  installed package instead: `getAuthTables()` exported from `better-auth/db` is
+  what the runtime itself uses. Calling it with the real options prints every
+  table, column, index and foreign key.
+- **`prisma migrate dev` cannot generate this kind of migration.** It emits
+  `DROP COLUMN` / `ADD COLUMN` pairs for what are really renames, which would
+  discard every account row, and it refuses to run non-interactively at all.
+  `prisma/migrations/20260902143940_betterauth/migration.sql` is hand-written for
+  that reason. Renaming in place is what preserves `users.id`, and six tables
+  carry foreign keys to it.
+- **The domain allowlist lives in `user.validateUserInfo`**, not in a
+  `databaseHooks.user.create.before` hook. `validateUserInfo` fires on
+  `create-user`, `link-account` **and** `sign-in`; the create hook would guard
+  only first sign-up and let a linking flow straight through. The predicate
+  (`isAllowedEmailDomain` in `lib/auth-config.ts`) compares the segment after the
+  **last** `@` for equality: a suffix test would admit `notnutrient.io`, and
+  splitting on the first `@` would admit `nutrient.io@gmail.com`.
+- **Account linking is enabled** with `trustedProviders: ['google', 'microsoft']`.
+  One person who uses both providers must be one user row, or document ownership
+  splits and comments follow the wrong identity. `allowDifferentEmails` stays
+  off.
+- **Microsoft is single-tenant** via `MICROSOFT_TENANT_ID`. Given a real tenant
+  GUID the provider also pins expected-issuer validation on the id token, which
+  the `common` and `organizations` scopes cannot do. The provider key is
+  `microsoft` (the implementation file is named `microsoft-entra-id`), and the
+  Entra redirect URI is `/api/auth/callback/microsoft`.
+- **Google's callback path is unchanged** from the NextAuth era
+  (`/api/auth/callback/google`), so no Google Cloud Console edit was needed. Only
+  the catch-all route folder moved, from `[...nextauth]` to `[...all]`.
+- **`betterAuth()` constructs lazily.** With no secret, no base URL, no database
+  and empty provider credentials it still returns a working object and only
+  warns. That is why `lib/auth.test.ts` and `lib/auth-config.test.ts` import
+  cleanly with no auth environment set and need no `vitest.setup.ts` shims.
+- **Set `BETTER_AUTH_URL` in every deployed environment.** Without it BetterAuth
+  derives the origin from the incoming request and warns that callbacks and
+  redirects may misbehave. Locally it is `http://localhost:3000`.
+- **`BETTER_AUTH_SECRET` can reuse the old `NEXTAUTH_SECRET` value.** Nothing
+  re-encrypts across the migration, and the sessions table is truncated anyway,
+  so the only cost of keeping it is none and the only cost of changing it is
+  another forced sign-in.
+- **BetterAuth's client keeps session state in a store, not React context**, so
+  there is no session provider in `app/layout.tsx` and there should not be one.
+  `useSession()` returns `{ data, isPending, error, refetch }` — `isPending`,
+  not a `status` string, and `refetch()` where NextAuth had `update()`.
+  `hooks/use-impersonation.ts` calls `refetch()` rather than writing the new mode
+  into the session, because the server already re-reads it per request; writing
+  it client-side would create a second source of truth.
+
+### A worktree nested inside the checkout defeats `tsc` on removed dependencies
+
+`.claude/worktrees/<name>` sits **inside** the main checkout, so Node and
+TypeScript module resolution walk up and find the parent's `node_modules`. After
+`pnpm remove next-auth` in a worktree, `import { useSession } from
+'next-auth/react'` still type-checked, because the main checkout still had
+next-auth installed. `pnpm typecheck` reported a clean pass with a broken import
+in `hooks/use-impersonation.ts`.
+
+So when removing a dependency, **grep for its imports; do not trust typecheck**:
+
+```bash
+grep -rn "from 'next-auth" app lib components hooks types global.d.ts
+```
+
+Note also that `hooks/` is easy to omit from a survey sweep — that is exactly how
+the stale import above survived until the grep.
+
 ## Summary
 
 The key is to write clean, testable, functional code that evolves through small, safe increments. Every change should be driven by a test that describes the desired behavior, and the implementation should be the simplest thing that makes that test pass. When in doubt, favor simplicity and readability over cleverness.
