@@ -1674,6 +1674,75 @@ library, also grep the provider's route prefix:
 grep -rn "/api/auth/" app components hooks lib
 ```
 
+## Deploying a schema change
+
+**Nothing applies migrations for you.** `postinstall` runs `prisma generate`, not
+`prisma migrate deploy`, and the Vercel build does not touch the database. So a
+deploy that changes `schema.prisma` ships a Prisma client that selects columns
+the production database does not have, and **`migrate deploy` is a separate
+manual step that has to happen for every such deploy**.
+
+This is not hypothetical. The SMS work merged and deployed on 2026-08-31 without
+its two migrations being applied to production Neon. Every query touching `users`
+then failed with
+
+```
+PrismaClientKnownRequestError (P2022)
+The column `users.phone` does not exist in the current database.
+```
+
+which surfaced as `[next-auth][error][adapter_error_getUserByAccount]` and sent
+the browser to `/api/auth/error?error=Callback`. **Nobody could sign in to
+production for two days**, and it went unnoticed because
+`/api/auth/session` still answers `200` (with `SESSION_ERROR` logged
+server-side), so the app looks healthy from the outside. It was found only
+because a *different* auth problem was being chased.
+
+Read the real error from the function logs — the browser never shows it:
+
+```bash
+vercel logs <deployment-url> --json | grep -i "next-auth\]\[error\|P2022"
+```
+
+### Applying a migration to production
+
+Run it from a checkout on the branch that is **actually deployed**, because
+`migrate deploy` applies *every* pending migration in `prisma/migrations`, not
+just the ones belonging to your change. Running it from a feature worktree
+applies that feature's migrations too — which is how you would put a BetterAuth
+schema onto a production still running NextAuth code.
+
+```bash
+git switch main
+vercel env pull .env.prod.tmp --environment=production --project dws-crud
+set -a; . ./.env.prod.tmp; set +a
+pnpm prisma migrate status   # confirm ONLY the expected migrations are pending
+pnpm prisma migrate deploy
+rm -f .env.prod.tmp
+```
+
+`prisma.config.ts` prefers `DATABASE_POSTGRES_URL_NON_POOLING`, which only the
+pulled production file provides, so it wins over a local `DATABASE_URL` and the
+command cannot accidentally target localhost. No redeploy is needed afterwards:
+the schema is read at query time, not build time.
+
+**`DEPLOYMENT.md` is stale on this subject and partly unsafe.** It tells you to
+`vercel env pull .env.local` (which overwrites your local dev configuration with
+production values), to run `prisma db push` against production after
+`migrate deploy` (`db push` alters the schema with no migration record and can
+drop columns), and to read `DATABASE_URL` out of `.env.production`, which no
+longer carries any database variables. Prefer the steps above.
+
+### Ordering rule
+
+For a migration that only **adds** columns or tables, migrate first, then deploy;
+either order works, and migrating first means the window of mismatch is zero.
+
+For one that **renames, drops, or retypes** anything — the BetterAuth migration
+does all three — the code and the schema are not compatible in either direction,
+so there is no safe gap. Apply the migration and promote the deployment
+together, and expect a brief window where in-flight requests fail.
+
 ## Summary
 
 The key is to write clean, testable, functional code that evolves through small, safe increments. Every change should be driven by a test that describes the desired behavior, and the implementation should be the simplest thing that makes that test pass. When in doubt, favor simplicity and readability over cleverness.
