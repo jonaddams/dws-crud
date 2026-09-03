@@ -2,7 +2,9 @@ import type { Prisma } from '@prisma/client';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getEffectiveDocumentFilter, requireAuth, type SessionUser } from '@/lib/auth';
 import { documentProvider } from '@/lib/document-provider';
+import { nutrientConfig } from '@/lib/nutrient-config';
 import { prisma } from '@/lib/prisma';
+import { validateUpload } from '@/lib/upload-validation';
 import { withRetry } from '@/lib/with-retry';
 
 /**
@@ -126,6 +128,13 @@ export async function POST(request: NextRequest) {
 
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
+    }
+
+    // Refuse what the backend would refuse anyway, before paying to send it.
+    const validation = validateUpload({ file, limits: nutrientConfig().limits });
+
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.message }, { status: validation.status });
     }
 
     // Upload to the configured document backend, retrying a transient failure.
