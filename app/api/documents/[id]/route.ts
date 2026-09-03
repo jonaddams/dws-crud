@@ -5,8 +5,9 @@ import {
   requireAuth,
   type SessionUser,
 } from '@/lib/auth';
-import { nutrientAPIService } from '@/lib/nutrient-api';
+import { documentProvider } from '@/lib/document-provider';
 import { prisma } from '@/lib/prisma';
+import { withRetry } from '@/lib/with-retry';
 
 /**
  * GET /api/documents/[id]
@@ -157,8 +158,8 @@ export async function DELETE(
 
     // Delete from Nutrient API (with retry logic, but don't fail if it fails)
     try {
-      await nutrientAPIService.withRetry(() =>
-        nutrientAPIService.deleteDocument(document.documentEngineId)
+      await withRetry(() =>
+        documentProvider().deleteDocument({ documentId: document.documentEngineId })
       );
     } catch (_error) {
       // Continue with database deletion even if Nutrient API deletion fails
