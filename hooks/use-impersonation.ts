@@ -1,6 +1,6 @@
 import type { ImpersonationMode } from '@prisma/client';
-import { useSession } from 'next-auth/react';
 import { useCallback, useEffect, useState } from 'react';
+import { useSession } from '@/lib/auth-client';
 
 type ImpersonationState = {
   currentMode: ImpersonationMode;
@@ -10,7 +10,7 @@ type ImpersonationState = {
 };
 
 export function useImpersonation() {
-  const { data: session, update } = useSession();
+  const { data: session, refetch } = useSession();
   const [state, setState] = useState<ImpersonationState>({
     currentMode: 'SELF',
     canImpersonate: false,
@@ -70,14 +70,12 @@ export function useImpersonation() {
           isLoading: false,
         }));
 
-        // Update the session to reflect the new impersonation mode
-        await update({
-          ...session,
-          user: {
-            ...session?.user,
-            currentImpersonationMode: newMode,
-          },
-        });
+        // Invalidate the client's copy of the session rather than editing it.
+        // The server re-reads currentImpersonationMode from the users row on
+        // every request, so it is already authoritative; writing a value into
+        // the session here would create a second source of truth that could
+        // disagree with the database.
+        await refetch();
 
         return data;
       } catch (error) {
@@ -89,7 +87,7 @@ export function useImpersonation() {
         throw error;
       }
     },
-    [session, update]
+    [refetch]
   );
 
   // Initialize on mount and when session changes

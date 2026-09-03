@@ -2,8 +2,8 @@
 
 import type { Document } from '@prisma/client';
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
 import { useCallback, useEffect, useState } from 'react';
+import { useSession } from '@/lib/auth-client';
 
 type DocumentWithOwner = Document & {
   ownerId: string;
@@ -14,7 +14,7 @@ type DocumentWithOwner = Document & {
 };
 
 export function DocumentList() {
-  const { data: session, status } = useSession();
+  const { data: session, isPending } = useSession();
   const [documents, setDocuments] = useState<DocumentWithOwner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +68,7 @@ export function DocumentList() {
 
   const canDeleteDocument = (document: DocumentWithOwner) => {
     // Don't show delete buttons if session is still loading
-    if (status === 'loading' || !session?.user) return false;
+    if (isPending || !session?.user) return false;
 
     // User can delete if they own the document
     if (document.ownerId === session.user.id) return true;

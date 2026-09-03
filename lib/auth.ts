@@ -1,6 +1,7 @@
 import type { ImpersonationMode, Prisma, UserRole } from '@prisma/client';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth-config';
+import { headers } from 'next/headers';
+import { auth } from '@/lib/auth-config';
+import { prisma } from '@/lib/prisma';
 
 export type SessionUser = {
   id: string;
@@ -11,34 +12,73 @@ export type SessionUser = {
   currentImpersonationMode?: ImpersonationMode;
 };
 
-export async function getSession() {
-  return await getServerSession(authOptions);
+/**
+ * The current session, or null when nobody is signed in.
+ *
+ * BetterAuth returns `{ session, user }`; every caller here wants `{ user }`, so
+ * the shape is normalised rather than passed straight through.
+ *
+ * `role` and `currentImpersonationMode` are read from the `users` row on **every
+ * call**, rather than taken from the session record via BetterAuth's
+ * `user.additionalFields`. That is deliberate and worth the extra query: the
+ * admin role switcher writes to that row, and a session-cached value would make
+ * the switcher appear to do nothing until the next sign-in.
+ *
+ * `id` always comes from the signed-in account's own row and is never derived
+ * from `currentImpersonationMode`. Impersonation widens which documents you can
+ * see; it does not change who you are. DWS records this id as a comment's
+ * author and it is what a verified phone number binds to, so conflating the two
+ * would post comments as someone else.
+ */
+export async function getSession(): Promise<{ user: SessionUser } | null> {
+  const betterAuthSession = await auth.api.getSession({ headers: await headers() });
+
+  if (!betterAuthSession?.user?.id) {
+    return null;
+  }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: betterAuthSession.user.id },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      image: true,
+      role: true,
+      currentImpersonationMode: true,
+    },
+  });
+
+  if (!dbUser) {
+    return null;
+  }
+
+  return {
+    user: {
+      id: dbUser.id,
+      email: dbUser.email,
+      name: dbUser.name,
+      image: dbUser.image,
+      role: dbUser.role,
+      currentImpersonationMode: dbUser.currentImpersonationMode,
+    },
+  };
 }
 
 /**
  * Validates that a user session exists and returns the session.
  * Throws an error if no valid session is found.
  * Use this in API routes and server components to ensure authentication.
+ *
+ * **Do not reword the thrown message.** Every route under `app/api/` compares
+ * `error.message` to the literal `'Authentication required'` to map this to a
+ * 401; a different string turns each of them into a 500.
  */
 export async function requireAuth() {
   const session = await getSession();
 
   if (!session?.user?.id) {
     throw new Error('Authentication required');
-  }
-
-  return session;
-}
-
-/**
- * Validates that a user has admin role.
- * Throws an error if user is not an admin.
- */
-export async function requireAdmin() {
-  const session = await requireAuth();
-
-  if (session.user.role !== 'ADMIN') {
-    throw new Error('Admin access required');
   }
 
   return session;

@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';
-import SessionProvider from '@/components/providers/session-provider';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 
 const geistSans = Geist({
@@ -34,9 +33,9 @@ export default function RootLayout({
         />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ThemeProvider>
-          <SessionProvider>{children}</SessionProvider>
-        </ThemeProvider>
+        {/* BetterAuth's client keeps session state in a store rather than React
+            context, so no session provider is needed here. */}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

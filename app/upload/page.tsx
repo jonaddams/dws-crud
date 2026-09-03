@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { FileUpload } from '@/components/file-upload';
+import { SignOutButton } from '@/components/sign-out-button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { requireAuth } from '@/lib/auth';
 
@@ -44,12 +45,7 @@ export default async function Upload() {
                   <span className="text-xs sm:text-sm text-muted truncate max-w-32 sm:max-w-none">
                     {session.user.name || session.user.email}
                   </span>
-                  <Link
-                    href="/api/auth/signout"
-                    className="text-xs sm:text-sm text-primary hover:text-primary-hover transition-colors cursor-pointer"
-                  >
-                    Sign out
-                  </Link>
+                  <SignOutButton />
                 </div>
               </div>
             </div>

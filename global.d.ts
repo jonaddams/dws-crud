@@ -1,30 +1,14 @@
 // Global TypeScript declarations for the Nutrient API CRUD App
 
-import type { ImpersonationMode, UserRole } from '@prisma/client';
-
-// Extend NextAuth types
-declare module 'next-auth' {
-  interface User {
-    id: string;
-    role?: UserRole;
-    currentImpersonationMode?: ImpersonationMode;
-  }
-
-  interface Session {
-    user: {
-      id: string;
-      email: string;
-      name?: string | null;
-      image?: string | null;
-      role?: UserRole;
-      currentImpersonationMode?: ImpersonationMode;
-    };
-  }
-}
+// The session shape used to be augmented here and again in
+// types/next-auth.d.ts. Both are gone: `SessionUser` in lib/auth.ts is the
+// single source of truth, and BetterAuth infers its own types from
+// lib/auth-config.ts. What remains below is only the Nutrient Viewer surface.
+export {};
 
 // Nutrient Viewer API types
 
-// This file is a module (it imports Prisma types), so these have to live inside
+// The `export {}` above keeps this file a module, so these have to live inside
 // `declare global` to be visible without an import.
 declare global {
   /**

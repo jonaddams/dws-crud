@@ -38,7 +38,10 @@ export async function POST(request: NextRequest) {
       success: true,
       user: updatedUser,
     });
-  } catch (_error) {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Authentication required') {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     return NextResponse.json({ error: 'Failed to update impersonation mode' }, { status: 500 });
   }
 }
@@ -51,7 +54,10 @@ export async function GET() {
       currentMode: session.user.currentImpersonationMode || 'SELF',
       canImpersonate: session.user.role === 'ADMIN',
     });
-  } catch (_error) {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Authentication required') {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     return NextResponse.json({ error: 'Failed to fetch impersonation status' }, { status: 500 });
   }
 }

@@ -19,13 +19,12 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
-    "@next-auth/prisma-adapter": "^1.0.7",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@types/jsonwebtoken": "^9.0.10",
+    "better-auth": "1.7.2",
     "jsonwebtoken": "^9.0.3",
     "next": "16.3.1",
-    "next-auth": "^4.24.15",
     "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
