@@ -220,6 +220,9 @@ text is not worse off, and it survives an image that fails to load.
 - [ ] The screenshot is real and shows the disclosures
 - [ ] `PROGRAM_NAME` is still `Bindery` in the code, on the page, and in the filing
 - [ ] The page no longer instructs a reviewer to do something that will fail
+- [ ] Every keyword field names keywords `classifyKeyword` actually honours
+- [ ] `opt_in_message` and `help_message` are constants, not Twilio's examples
+- [ ] No field anywhere still holds Twilio's placeholder text
 
 ## Still open
 
@@ -231,3 +234,56 @@ with the filing.
 
 Worth a test that fetches <https://jonaddams.com/sms> and asserts its examples
 match the constants in this repo. It would have caught both rejections.
+
+## Submitted 2026-09-03 — three fields went in with placeholder text
+
+The campaign is now `IN_PROGRESS` with `errors: []`. Read back from
+`GET messaging.twilio.com/v1/Services/{MGsid}/Compliance/Usa2p`, the two checks
+that failed the previous submissions are both correct: `message_flow` is the
+mobile-originated answer from this document verbatim, and all five
+`message_samples` are byte-identical to the constants in `lib/sms-program.ts`.
+
+Three secondary fields, however, still hold Twilio's generic placeholder text —
+the same fault class that sank the first submission. They are not editable while
+the campaign is `IN_PROGRESS`; Twilio's edit-and-retry applies to a `FAILED`
+campaign. **Fix all three in the same edit window**, whether that window is a
+rejection or a post-approval edit:
+
+| Field | Filed | Must become |
+| --- | --- | --- |
+| `opt_in_keywords` | `VERIFY, VERIFICATION` | `START, YES, UNSTOP` |
+| `opt_in_message` | `You are now opted-in. For help, reply HELP. To opt-out, reply STOP` | `OPTED_BACK_IN_MESSAGE` |
+| `help_message` | `Reply STOP to unsubscribe. Msg&Data Rates May Apply.` | `HELP_MESSAGE` |
+
+`lib/a2p-filing.test.ts` already pins the correct values as
+`FILED_OPT_IN_KEYWORDS`, `FILED_OPT_IN_MESSAGE` and `FILED_HELP_MESSAGE`, so
+copy them from there rather than retyping.
+
+The keyword row is the one with teeth. The filing claims the program honours
+`VERIFY` and `VERIFICATION`; `classifyKeyword` returns `null` for both, and
+`a2p-filing.test.ts` asserts that it does. An unrecognised keyword does not fail
+politely — it falls through to the reply path and is posted into a document as a
+comment. So a reviewer who texts `VERIFY` gets no opt-in confirmation and
+silently writes a comment somewhere.
+
+The `help_message` row makes the filing contradict itself: sample #3 in the same
+submission is the real HELP reply, so the form gives two different answers to
+"what does HELP return?".
+
+`opt_out_keywords` (all eight), `help_keywords`, and the Twilio-default
+`opt_out_message` are correct and deliberate — the webhook answers STOP with
+silence on purpose, so Twilio's own default is what a recipient actually sees.
+
+## Also fixed 2026-09-03: `.env.production` held the dead trial number
+
+`TWILIO_PHONE_NUMBER` was still `+17372583742` on `main` and on both unmerged
+branches, with a comment claiming it was "correct in production while the
+account remains a trial". The account is no longer a trial and that number is
+dead. Because `.env.production` is committed and Next loads it in the production
+runtime, it can win over Vercel's value — so at approval the opt-in screen would
+have displayed a number nobody can text, contradicting both the published page
+and this filing, and `lib/twilio.ts` would have sent from it.
+
+Nothing was broken in production at the time, only because outbound was still
+blocked and `/settings` was unmerged. It would have broken at whichever came
+first, the merge or the approval.
