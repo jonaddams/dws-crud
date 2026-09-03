@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "biome check",
     "postinstall": "prisma generate",
+    "db:status": "prisma migrate status",
+    "db:migrate": "prisma migrate deploy",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
