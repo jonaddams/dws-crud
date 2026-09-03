@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getEffectiveDocumentFilter, requireAuth, type SessionUser } from '@/lib/auth';
-import { nutrientAPIService } from '@/lib/nutrient-api';
+import { documentProvider } from '@/lib/document-provider';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -40,7 +40,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     // Always create a fresh session token (they expire after 24 hours)
     // This ensures we never use an expired token
-    const sessionData = await nutrientAPIService.createSession({
+    const sessionData = await documentProvider().createViewerSession({
       documentId: document.documentEngineId,
       userId: session.user.id,
     });

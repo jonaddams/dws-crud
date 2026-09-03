@@ -12,8 +12,8 @@ vi.mock('@/lib/auth', () => ({
   requireAuth: (...a: unknown[]) => requireAuth(...a),
   getEffectiveDocumentFilter: (...a: unknown[]) => getEffectiveDocumentFilter(...a),
 }));
-vi.mock('@/lib/nutrient-api', () => ({
-  nutrientAPIService: { createSession: (...a: unknown[]) => createSession(...a) },
+vi.mock('@/lib/document-provider', () => ({
+  documentProvider: () => ({ createViewerSession: (...a: unknown[]) => createSession(...a) }),
 }));
 vi.mock('@/lib/prisma', () => ({
   prisma: {

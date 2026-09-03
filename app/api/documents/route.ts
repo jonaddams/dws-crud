@@ -1,8 +1,11 @@
 import type { Prisma } from '@prisma/client';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getEffectiveDocumentFilter, requireAuth, type SessionUser } from '@/lib/auth';
-import { nutrientAPIService } from '@/lib/nutrient-api';
+import { documentProvider } from '@/lib/document-provider';
+import { nutrientConfig } from '@/lib/nutrient-config';
 import { prisma } from '@/lib/prisma';
+import { validateUpload } from '@/lib/upload-validation';
+import { withRetry } from '@/lib/with-retry';
 
 /**
  * GET /api/documents
@@ -127,10 +130,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
     }
 
-    // Upload to Nutrient API with retry logic
-    const nutrientResult = await nutrientAPIService.withRetry(() =>
-      nutrientAPIService.uploadDocument(file)
-    );
+    // Refuse what the backend would refuse anyway, before paying to send it.
+    const validation = validateUpload({ file, limits: nutrientConfig().limits });
+
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.message }, { status: validation.status });
+    }
+
+    // Upload to the configured document backend, retrying a transient failure.
+    const nutrientResult = await withRetry(() => documentProvider().uploadDocument({ file }));
 
     // Store metadata in database
     const document = await prisma.document.create({
