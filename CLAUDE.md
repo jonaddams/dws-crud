@@ -1729,18 +1729,67 @@ just the ones belonging to your change. Running it from a feature worktree
 applies that feature's migrations too — which is how you would put a BetterAuth
 schema onto a production still running NextAuth code.
 
+**The recipe that used to be written here did not work, and worse, it produced
+output that looked like proof of the opposite.** Corrected 2026-09-03 while
+applying the BetterAuth migration. Two things it got wrong:
+
+1. **`vercel env pull --environment=production` cannot retrieve the database
+   URL.** It yields a ~1.2 KB file containing only `VERCEL_OIDC_TOKEN`; the Neon
+   integration variables and every Sensitive-marked secret are absent. So
+   sourcing that file leaves no `DATABASE_*` set at all.
+2. **A local `.env.local` overrides whatever you sourced.** `prisma.config.ts`
+   calls `process.loadEnvFile('.env')` then `('.env.local')` *inside the config
+   file*, which runs after the shell environment is built. So the old claim that
+   the command "cannot accidentally target localhost" was exactly backwards.
+
+Together those produced `7 migrations found / No pending migrations to apply` —
+true of the local database, false of production, which was one migration behind.
+That reads as "production is fully migrated" and would have authorised deploying
+BetterAuth onto an unmigrated production.
+
+So the connection string has to be copied by hand, from the Vercel dashboard
+(`DATABASE_POSTGRES_URL_NON_POOLING` is type `Config`, so its value is viewable)
+or from the Neon console. Use a worktree with **no `.env`**, and write a
+`.env.local` holding *only* that URL, so nothing can override it. Copy the URL
+to the clipboard first to keep it out of shell history:
+
 ```bash
 git switch main
-vercel env pull .env.prod.tmp --environment=production --project dws-crud
-set -a; . ./.env.prod.tmp; set +a
-pnpm prisma migrate status   # confirm ONLY the expected migrations are pending
-pnpm prisma migrate deploy
-rm -f .env.prod.tmp
+printf 'DATABASE_POSTGRES_URL_NON_POOLING=%s\n' "$(pbpaste)" > .env.local
+pnpm db:status    # confirm the datasource line AND the pending list
+pnpm db:migrate
+rm -f .env.local
 ```
 
-`prisma.config.ts` prefers `DATABASE_POSTGRES_URL_NON_POOLING`, which only the
-pulled production file provides, so it wins over a local `DATABASE_URL` and the
-command cannot accidentally target localhost. No redeploy is needed afterwards:
+**Read the datasource line that `db:status` prints — do not skip it.** It is the
+only thing that tells you which database answered:
+
+```
+Datasource "db": PostgreSQL database "neondb", schema "public" at "ep-....aws.neon.tech"
+```
+
+A `localhost` host there means the answer is about your laptop, not production.
+Check too that the host carries no `-pooler`: the pooled endpoint is PgBouncer
+and cannot run the session-level statements the migration engine issues.
+
+**Only a real sign-in proves production auth works.** In a private window, since
+a migration that touches `sessions` invalidates the cookie you are carrying. A
+`curl` of the home page and a `200` from the session endpoint both look healthy
+while sign-in is entirely broken — that is what hid the two-day outage, and on
+2026-09-03 a real sign-in was what established the true schema state after two
+scripted checks had suggested the opposite. Once deployed, the route signatures
+are a decent cheap secondary check: BetterAuth serves `/api/auth/get-session`
+(200) and NextAuth's `/api/auth/session` becomes 404.
+
+**Ordering, for a migration that renames, drops or retypes.** There is no safe
+gap in either order, so merge first and apply the migration *while the build
+runs*: Vercel keeps serving the current production deployment until a new build
+succeeds, so the broken window is only the tail of the build rather than a whole
+build cycle. The risk to accept is that a failed build leaves production on old
+code against the new schema.
+
+**Merge stacked PRs with a merge commit, not squash.** Squashing the base PR
+rewrites its SHAs and makes the PR stacked on it conflict with itself. No redeploy is needed afterwards:
 the schema is read at query time, not build time.
 
 **`DEPLOYMENT.md` is stale on this subject and partly unsafe.** It tells you to
