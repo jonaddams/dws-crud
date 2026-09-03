@@ -1462,10 +1462,27 @@ database.
 - **STOP/HELP are handled in our webhook rather than left to Twilio's Advanced
   Opt-Out,** so `smsOptedOutAt` reflects reality and the notifier stops queuing
   sends Twilio would otherwise silently drop. Keyword matching is whole-message
-  (STOP/STOPALL/UNSUBSCRIBE/CANCEL/END/QUIT to opt out; START/YES/UNSTOP to
-  opt back in; HELP/INFO for help), not substring, and it is checked before the
-  verification-code check so a STOP from an otherwise-valid sender still opts
-  them out rather than being swallowed as a reply attempt.
+  (STOP/STOPALL/UNSUBSCRIBE/CANCEL/END/QUIT/**OPTOUT**/**REVOKE** to opt out;
+  START/YES/UNSTOP to opt back in; HELP/INFO for help), not substring, and it is
+  checked before the verification-code check so a STOP from an otherwise-valid
+  sender still opts them out rather than being swallowed as a reply attempt.
+  `lib/sms-keywords.ts` is the authority — this list was previously missing
+  OPTOUT and REVOKE, and an out-of-date copy here is how a wrong list gets filed
+  with the campaign.
+- **The opt-in keywords are START/YES/UNSTOP, not VERIFY.** Texting a
+  verification *code* is how a new number registers; there is no keyword for it.
+  The campaign's third submission was nearly filed claiming `VERIFY,VERIFICATION`
+  as opt-in keywords, which the code does not handle at all — and an
+  unrecognised keyword does not fail politely, it falls through to the reply path
+  and gets **posted into a document as a comment**. `lib/sms-keywords.ts` warns
+  about exactly this in its header.
+- **The webhook is deliberately silent on STOP.** It records `smsOptedOutAt` and
+  replies with nothing, because Twilio sends the carrier-mandated confirmation
+  itself and a message of our own to somebody who just left is what they asked
+  us to stop doing. So the opt-out confirmation a recipient sees is *Twilio's*
+  default text, not ours — which is what the campaign should file for that
+  field. This has never been observed in production, because outbound is blocked
+  until the campaign clears; confirm it once sending is live.
 - **A verification code cannot be brute-force-capped per row, because the guess
   is unauthenticated.** The natural-looking implementation —
   `findFirst({ where: { code, verifiedAt: null } })` — puts the guessed code
@@ -1674,6 +1691,85 @@ library, also grep the provider's route prefix:
 grep -rn "/api/auth/" app components hooks lib
 ```
 
+## Deploying a schema change
+
+**Nothing applies migrations for you.** `postinstall` runs `prisma generate`, not
+`prisma migrate deploy`, and the Vercel build does not touch the database. So a
+deploy that changes `schema.prisma` ships a Prisma client that selects columns
+the production database does not have, and **`migrate deploy` is a separate
+manual step that has to happen for every such deploy**.
+
+This is not hypothetical. The SMS work merged and deployed on 2026-08-31 without
+its two migrations being applied to production Neon. Every query touching `users`
+then failed with
+
+```
+PrismaClientKnownRequestError (P2022)
+The column `users.phone` does not exist in the current database.
+```
+
+which surfaced as `[next-auth][error][adapter_error_getUserByAccount]` and sent
+the browser to `/api/auth/error?error=Callback`. **Nobody could sign in to
+production for two days**, and it went unnoticed because
+`/api/auth/session` still answers `200` (with `SESSION_ERROR` logged
+server-side), so the app looks healthy from the outside. It was found only
+because a *different* auth problem was being chased.
+
+Read the real error from the function logs — the browser never shows it:
+
+```bash
+vercel logs <deployment-url> --json | grep -i "next-auth\]\[error\|P2022"
+```
+
+### Applying a migration to production
+
+Run it from a checkout on the branch that is **actually deployed**, because
+`migrate deploy` applies *every* pending migration in `prisma/migrations`, not
+just the ones belonging to your change. Running it from a feature worktree
+applies that feature's migrations too — which is how you would put a BetterAuth
+schema onto a production still running NextAuth code.
+
+```bash
+git switch main
+vercel env pull .env.prod.tmp --environment=production --project dws-crud
+set -a; . ./.env.prod.tmp; set +a
+pnpm prisma migrate status   # confirm ONLY the expected migrations are pending
+pnpm prisma migrate deploy
+rm -f .env.prod.tmp
+```
+
+`prisma.config.ts` prefers `DATABASE_POSTGRES_URL_NON_POOLING`, which only the
+pulled production file provides, so it wins over a local `DATABASE_URL` and the
+command cannot accidentally target localhost. No redeploy is needed afterwards:
+the schema is read at query time, not build time.
+
+**`DEPLOYMENT.md` is stale on this subject and partly unsafe.** It tells you to
+`vercel env pull .env.local` (which overwrites your local dev configuration with
+production values), to run `prisma db push` against production after
+`migrate deploy` (`db push` alters the schema with no migration record and can
+drop columns), and to read `DATABASE_URL` out of `.env.production`, which no
+longer carries any database variables. Prefer the steps above.
+
+### Ordering rule
+
+For a migration that only **adds** columns or tables, migrate first, then deploy;
+either order works, and migrating first means the window of mismatch is zero.
+
+For one that **renames, drops, or retypes** anything — the BetterAuth migration
+does all three — the code and the schema are not compatible in either direction,
+so there is no safe gap. Apply the migration and promote the deployment
+together, and expect a brief window where in-flight requests fail.
+
 ## Summary
 
 The key is to write clean, testable, functional code that evolves through small, safe increments. Every change should be driven by a test that describes the desired behavior, and the implementation should be the simplest thing that makes that test pass. When in doubt, favor simplicity and readability over cleverness.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

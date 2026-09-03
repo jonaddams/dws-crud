@@ -33,9 +33,48 @@ export const PROGRAM_NAME = 'Bindery';
 
 const prefixed = (message: string): string => `${PROGRAM_NAME}: ${message}`;
 
-/** Sent when someone texts a valid, live verification code. */
+/**
+ * The number a reader texts their verification code to, formatted for display.
+ *
+ * The digits come from `TWILIO_PHONE_NUMBER`, so the opt-in screen always shows
+ * the number the app actually receives on. The *formatting* is fixed here to
+ * match https://jonaddams.com/sms exactly, because a carrier reviewer compares
+ * the number on the screen against the published page against the number filed
+ * with the campaign — and a difference in punctuation is still a difference.
+ *
+ * Anything that is not a US 11-digit E.164 number is returned untouched. Forcing
+ * an unrecognised value into a US shape would display a number nobody can text.
+ */
+export const formatProgramNumber = (rawNumber: string): string => {
+  const digits = rawNumber.replace(/\D/g, '');
+
+  if (digits.length !== 11 || !digits.startsWith('1')) {
+    return rawNumber;
+  }
+
+  const area = digits.slice(1, 4);
+  const exchange = digits.slice(4, 7);
+  const line = digits.slice(7);
+
+  return `+1 ${area} ${exchange}-${line}`;
+};
+
+/**
+ * Sent when someone texts a valid, live verification code.
+ *
+ * This is the consent receipt, and a carrier reviewer reads it as such, so it
+ * carries the whole disclosure set on its own rather than leaning on the
+ * published page: the program name, what the messages are, how often they come,
+ * that rates may apply, and both keywords.
+ *
+ * The campaign's second submission was rejected for "invalid sample message
+ * content" with this filed as sample #2 carrying neither the frequency nor the
+ * rates disclosure. Wording is tight because the whole thing still has to fit
+ * one 160-character GSM segment (it lands at 150) — see the segment test in
+ * sms-program.test.ts before editing.
+ */
 export const REGISTERED_MESSAGE = prefixed(
-  "Your number is registered. You'll get a text when someone mentions you in a document comment. Reply HELP for help, STOP to cancel."
+  "You're registered. Get a text when someone mentions you. Msg frequency varies. Msg&data rates may apply. Reply HELP for help, STOP to cancel."
 );
 
 /** Sent when someone re-texts a code they have already redeemed themselves. */
@@ -71,3 +110,36 @@ export const PHONE_IN_USE_MESSAGE = prefixed(
 export const NO_THREAD_MESSAGE = prefixed(
   'No recent comment thread to reply to. Open the document to comment.'
 );
+
+/**
+ * Where the program's public terms live.
+ *
+ * The opt-in screen has to link these: a carrier reviewer checking the
+ * Call-to-Action expects the consent surface itself to reach the terms and the
+ * privacy policy, not merely to exist somewhere on the site.
+ */
+export const PROGRAM_LEGAL_URLS = {
+  program: 'https://jonaddams.com/sms',
+  terms: 'https://jonaddams.com/terms',
+  privacy: 'https://jonaddams.com/privacy',
+} as const;
+
+/**
+ * The disclosures shown next to the opt-in action.
+ *
+ * These belong on the screen where consent is given, which is the screen a
+ * carrier reviewer asks to see. The campaign's second submission failed its
+ * Call-to-Action check partly because that screen did not exist at all, so there
+ * was nothing to show and nothing to screenshot.
+ *
+ * They must say the same thing as https://jonaddams.com/sms. That page is
+ * rendered from a different repository, which is precisely how the wording
+ * drifted last time, so keep the two in step deliberately.
+ */
+export const CONSENT_DISCLOSURES = [
+  `${PROGRAM_NAME} texts you only about documents you already have access to — most often when a colleague mentions you in a comment.`,
+  'Message frequency varies. Messages are sent in response to activity, so how many you get depends on your own use of the application.',
+  'Message and data rates may apply.',
+  'Reply STOP to any message to opt out immediately, or HELP for help.',
+  `Consent is not a condition of using ${PROGRAM_NAME}, and no marketing messages are ever sent.`,
+] as const;
