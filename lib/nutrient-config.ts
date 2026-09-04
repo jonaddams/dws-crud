@@ -212,7 +212,26 @@ const resolveAllowedMimeTypes = (raw: string | undefined): readonly string[] => 
   return types;
 };
 
-export const resolveNutrientConfig = (env: NutrientConfigEnv): NutrientConfig => {
+/**
+ * Treat a present-but-blank variable as absent.
+ *
+ * `.env.production` lists every name here with an empty assignment so the file
+ * documents them, and Next loads that file in the production runtime — so a
+ * documented-but-unset variable reaches the process as `''`, not as `undefined`.
+ * Without this, resolvers that validate their input reject the blank and the
+ * whole config throws, which takes out every route that resolves it.
+ *
+ * Only wholly blank values are erased. Something like `,,,` still reaches its
+ * resolver and is still reported, because that is a typo worth surfacing rather
+ * than an unset variable.
+ */
+const withoutBlanks = (env: NutrientConfigEnv): NutrientConfigEnv =>
+  Object.fromEntries(
+    Object.entries(env).filter(([, value]) => value === undefined || value.trim() !== '')
+  );
+
+export const resolveNutrientConfig = (rawEnv: NutrientConfigEnv): NutrientConfig => {
+  const env = withoutBlanks(rawEnv);
   const target = resolveTarget(env.NUTRIENT_TARGET);
 
   return {
